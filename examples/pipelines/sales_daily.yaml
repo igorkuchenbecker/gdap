@@ -1,0 +1,145 @@
+# Daily sales pipeline — the reference example.
+# Run it with:  gdap pipeline run sales_daily
+name: sales_daily
+description: Ingest transactions, clean them, compute monthly revenue and publish a report.
+owner: data-team@example.com
+tags: [sales, daily, reference]
+
+params:
+  source: demo_files
+  object: transactions.csv
+  min_quality: 70
+  target_dataset: sales_monthly
+
+schedule:
+  cron: "0 6 * * *"        # 06:00 every day, in the timezone below
+  timezone: UTC
+
+retry:
+  max_attempts: 3
+  backoff_seconds: 30
+  backoff_multiplier: 2
+
+quality_gate: 50           # abort the run if data quality collapses
+
+steps:
+  - id: ingest
+    uses: read.source
+    description: Pull the latest transaction extract into a new dataset version.
+    with:
+      source: ${params.source}
+      object: ${params.object}
+      dataset: transactions
+      mode: full
+
+  - id: clean
+    uses: clean.auto
+    description: Apply deterministic fixes; anything destructive waits for a human.
+    with:
+      apply: validated
+      dataset: transactions
+
+  - id: normalise_region
+    uses: transform.calculate
+    with:
+      calculate:
+        region: upper(trim(region))
+
+  - id: keep_completed
+    uses: transform.filter
+    with:
+      where: status == 'completed'
+
+  - id: net_revenue
+    uses: transform.calculate
+    with:
+      calculate:
+        net_revenue: revenue * (1 - discount_pct)
+
+  - id: validate
+    uses: validate.expectations
+    with:
+      auto: true
+      dataset: transactions
+
+  - id: gate
+    uses: quality.gate
+    with:
+      min_score: ${params.min_quality}
+
+  - id: calendar
+    uses: enrich.datetime
+    with:
+      column: order_date
+      parts: [year, month]
+
+  - id: monthly
+    uses: aggregate
+    output: monthly
+    with:
+      group_by: [region, order_date_year, order_date_month]
+      metrics:
+        revenue: sum(net_revenue)
+        orders: count
+        avg_ticket: mean(net_revenue)
+
+  - id: publish
+    uses: write.dataset
+    with:
+      dataset: ${params.target_dataset}
+      description: Monthly revenue by region, produced by sales_daily.
+
+  - id: trend
+    uses: analyze.trend
+    input: transactions
+    with:
+      metric: net_revenue
+      time_column: order_date
+      granularity: month
+
+  - id: by_region
+    uses: analyze.segmentation
+    input: transactions
+    with:
+      metric: net_revenue
+      dimension: region
+
+  - id: month_over_month
+    uses: analyze.comparison
+    input: transactions
+    with:
+      metric: net_revenue
+      time_column: order_date
+      dimension: region
+      granularity: month
+
+  - id: anomalies
+    uses: analyze.anomaly
+    input: transactions
+    with:
+      method: timeseries
+      metric: net_revenue
+      time_column: order_date
+      granularity: week
+
+  - id: narrate
+    uses: ai.insights
+    with:
+      question: What changed in revenue this month and why?
+
+  - id: report
+    uses: report.generate
+    with:
+      title: Daily sales review
+      formats: [html, xlsx]
+      dataset: ${params.target_dataset}
+
+  - id: quality_alert
+    uses: alert.threshold
+    when: quality_score < 100
+    with:
+      metric: quality_score
+      operator: lt
+      threshold: 85
+      severity: warning
+      message: Transaction data quality dropped below the agreed threshold.

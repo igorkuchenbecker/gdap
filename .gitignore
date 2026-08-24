@@ -1,0 +1,25 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+build/
+dist/
+
+# Tooling caches
+.mypy_cache/
+.ruff_cache/
+.pytest_cache/
+.coverage
+htmlcov/
+
+# GDAP runtime data (never commit a warehouse or an artifact)
+data/
+*.db
+*.db-wal
+*.db-shm
+.env
+
+# IDE / OS noise
+.DS_Store
+*.swp

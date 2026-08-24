@@ -1,0 +1,68 @@
+# Production-shaped local stack: Postgres for metadata, one API, one worker, shared data volume.
+#   docker compose -f deployment/docker-compose.yml up --build
+name: gdap
+
+x-common: &common
+  build:
+    context: ..
+    dockerfile: deployment/Dockerfile
+  environment: &env
+    GDAP_ENVIRONMENT: production
+    GDAP_HOME: /data
+    GDAP_DATABASE__URL: postgresql+psycopg://gdap:${POSTGRES_PASSWORD:-change-me}@postgres:5432/gdap
+    GDAP_OBSERVABILITY__LOG_FORMAT: json
+    GDAP_SECURITY__AUTH_ENABLED: "true"
+    # Point the AI layer at a provider by setting these two (optional):
+    # GDAP_AI__PROVIDER: anthropic
+    # ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY}
+  volumes:
+    - gdap-data:/data
+  depends_on:
+    postgres:
+      condition: service_healthy
+  restart: unless-stopped
+
+services:
+  postgres:
+    image: postgres:17-alpine
+    environment:
+      POSTGRES_USER: gdap
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-change-me}
+      POSTGRES_DB: gdap
+    volumes:
+      - gdap-postgres:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U gdap -d gdap"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+    restart: unless-stopped
+
+  migrate:
+    <<: *common
+    command: ["alembic", "upgrade", "head"]
+    restart: "no"
+
+  api:
+    <<: *common
+    command: ["gdap", "system", "serve"]
+    ports:
+      - "${GDAP_PORT:-8000}:8000"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      migrate:
+        condition: service_completed_successfully
+
+  worker:
+    <<: *common
+    command: ["gdap", "worker", "start", "--concurrency", "4"]
+    depends_on:
+      postgres:
+        condition: service_healthy
+      migrate:
+        condition: service_completed_successfully
+
+volumes:
+  gdap-data:
+  gdap-postgres:

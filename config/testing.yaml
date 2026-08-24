@@ -1,0 +1,18 @@
+# Test overlay: deterministic, isolated, no external calls.
+environment: testing
+debug: true
+
+security:
+  auth_enabled: false
+
+ai:
+  provider: heuristic
+
+observability:
+  log_level: WARNING
+  log_format: console
+
+worker:
+  concurrency: 1
+  poll_interval_s: 0.05
+  scheduler_enabled: false

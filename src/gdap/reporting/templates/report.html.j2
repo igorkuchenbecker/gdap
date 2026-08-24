@@ -1,0 +1,159 @@
+<!doctype html>
+<html lang="{{ spec.locale[:2] }}">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>{{ spec.title }}</title>
+{% if plotly_cdn %}<script src="https://cdn.plot.ly/plotly-2.35.2.min.js" charset="utf-8"></script>{% endif %}
+<style>
+  :root {
+    --bg: #ffffff; --surface: #f7f8fa; --border: #e3e6ea; --text: #16191d;
+    --muted: #5c6570; --accent: #0072B2; --good: #009E73; --warn: #E69F00; --bad: #D55E00;
+    --radius: 10px; --shadow: 0 1px 2px rgba(16,24,40,.06), 0 4px 12px rgba(16,24,40,.04);
+  }
+  @media (prefers-color-scheme: dark) {
+    :root { --bg:#11141a; --surface:#181c24; --border:#2a3039; --text:#e8eaed; --muted:#9aa4b2; }
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; background: var(--bg); color: var(--text);
+    font: 15px/1.6 Inter, "Segoe UI", system-ui, -apple-system, sans-serif;
+  }
+  .wrap { max-width: 1120px; margin: 0 auto; padding: 40px 24px 80px; }
+  header.report { border-bottom: 2px solid var(--accent); padding-bottom: 20px; margin-bottom: 32px; }
+  header.report h1 { margin: 0 0 6px; font-size: 30px; letter-spacing: -.02em; }
+  header.report .sub { color: var(--muted); font-size: 15px; }
+  header.report .meta { color: var(--muted); font-size: 13px; margin-top: 10px; }
+  .kpis { display: grid; grid-template-columns: repeat(auto-fit, minmax(190px, 1fr)); gap: 14px; margin: 0 0 32px; }
+  .kpi { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); padding: 16px 18px; box-shadow: var(--shadow); }
+  .kpi .label { color: var(--muted); font-size: 12px; text-transform: uppercase; letter-spacing: .06em; }
+  .kpi .value { font-size: 26px; font-weight: 650; margin-top: 6px; letter-spacing: -.02em; }
+  .kpi .unit { font-size: 15px; color: var(--muted); font-weight: 400; }
+  .kpi .change { font-size: 13px; margin-top: 4px; }
+  .kpi.good .value { color: var(--good); } .kpi.warn .value { color: var(--warn); } .kpi.bad .value { color: var(--bad); }
+  .up { color: var(--good); } .down { color: var(--bad); }
+  .summary { background: var(--surface); border-left: 4px solid var(--accent); border-radius: var(--radius);
+             padding: 18px 22px; margin-bottom: 34px; white-space: pre-line; }
+  .summary h2 { margin: 0 0 10px; font-size: 15px; text-transform: uppercase; letter-spacing: .08em; color: var(--muted); }
+  section.block { margin-bottom: 40px; }
+  section.block h2 { font-size: 21px; margin: 0 0 6px; letter-spacing: -.01em; }
+  section.block h3 { font-size: 17px; margin: 0 0 6px; }
+  section.block .body { color: var(--muted); white-space: pre-line; margin-bottom: 14px; }
+  .insight { border: 1px solid var(--border); border-left-width: 4px; border-radius: 8px;
+             padding: 12px 16px; margin: 10px 0; background: var(--surface); }
+  .insight .title { font-weight: 600; }
+  .insight .detail { color: var(--muted); font-size: 14px; margin-top: 4px; }
+  .insight .foot { font-size: 12px; color: var(--muted); margin-top: 8px; }
+  .insight.fact { border-left-color: var(--accent); }
+  .insight.inference { border-left-color: var(--good); }
+  .insight.hypothesis { border-left-color: var(--warn); }
+  .insight.recommendation { border-left-color: #CC79A7; }
+  .badge { display: inline-block; font-size: 11px; text-transform: uppercase; letter-spacing: .06em;
+           padding: 2px 8px; border-radius: 999px; border: 1px solid var(--border); margin-right: 8px; color: var(--muted); }
+  .badge.critical { color: var(--bad); border-color: var(--bad); }
+  .badge.warning { color: var(--warn); border-color: var(--warn); }
+  .table-wrap { overflow-x: auto; border: 1px solid var(--border); border-radius: var(--radius); }
+  table { border-collapse: collapse; width: 100%; font-size: 14px; }
+  th, td { padding: 9px 14px; text-align: left; border-bottom: 1px solid var(--border); white-space: nowrap; }
+  th { background: var(--surface); font-weight: 600; position: sticky; top: 0; }
+  tr:last-child td { border-bottom: none; }
+  td.num, th.num { text-align: right; font-variant-numeric: tabular-nums; }
+  .chart { margin: 18px 0; }
+  .chart-error { padding: 14px; border: 1px dashed var(--bad); border-radius: 8px; color: var(--bad); }
+  footer.report { border-top: 1px solid var(--border); padding-top: 18px; color: var(--muted); font-size: 13px; white-space: pre-line; }
+  @media print {
+    body { background: #fff; }
+    .wrap { max-width: none; padding: 0; }
+    section.block { break-inside: avoid; }
+  }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header class="report">
+    <h1>{{ spec.title }}</h1>
+    {% if spec.subtitle %}<div class="sub">{{ spec.subtitle }}</div>{% endif %}
+    <div class="meta">
+      Generated {{ generated_at | datetime }} · {{ spec.timezone }} · locale {{ spec.locale }}
+      {% if spec.metadata.get('dataset') %} · dataset <strong>{{ spec.metadata['dataset'] }}</strong>{% endif %}
+      {% if spec.metadata.get('job_id') %} · job <code>{{ spec.metadata['job_id'] }}</code>{% endif %}
+    </div>
+  </header>
+
+  {% if spec.kpis %}
+  <div class="kpis">
+    {% for kpi in spec.kpis %}
+    <div class="kpi {{ kpi.intent }}">
+      <div class="label">{{ kpi.label }}</div>
+      <div class="value">{{ kpi.value | number }}{% if kpi.unit %}<span class="unit">{{ kpi.unit }}</span>{% endif %}</div>
+      {% if kpi.change_pct is not none %}
+      <div class="change {{ 'up' if kpi.change_pct >= 0 else 'down' }}">
+        {{ '%+.1f' % kpi.change_pct }}% vs previous
+      </div>
+      {% endif %}
+    </div>
+    {% endfor %}
+  </div>
+  {% endif %}
+
+  {% if spec.executive_summary %}
+  <div class="summary">
+    <h2>Executive summary</h2>{{ spec.executive_summary }}
+  </div>
+  {% endif %}
+
+  {% for item in sections %}
+  {% set section = item.section %}
+  <section class="block">
+    {% if section.level <= 2 %}<h2>{{ section.title }}</h2>{% else %}<h3>{{ section.title }}</h3>{% endif %}
+    {% if section.body %}<div class="body">{{ section.body }}</div>{% endif %}
+
+    {% for insight in section.insights %}
+    <div class="insight {{ insight.kind.value }}">
+      <div class="title">
+        <span class="badge {{ insight.severity.value }}">{{ insight.kind.value }}</span>{{ insight.title }}
+      </div>
+      {% if insight.detail %}<div class="detail">{{ insight.detail }}</div>{% endif %}
+      <div class="foot">
+        confidence {{ '%.0f' % (insight.confidence * 100) }}%
+        {% for ev in insight.evidence %}
+          · source <code>{{ ev.source }}</code>
+          {% if ev.calculation %}· calc <code>{{ ev.calculation }}</code>{% endif %}
+          {% if ev.rows_considered %}· {{ ev.rows_considered }} rows{% endif %}
+        {% endfor %}
+      </div>
+    </div>
+    {% endfor %}
+
+    {% for chart_html in item.charts_html %}
+    <div class="chart">{{ chart_html | safe }}</div>
+    {% endfor %}
+
+    {% if section.table %}
+    <div class="table-wrap">
+      <table>
+        <thead><tr>{% for column in item.columns %}<th>{{ column }}</th>{% endfor %}</tr></thead>
+        <tbody>
+        {% for row in section.table %}
+          <tr>{% for column in item.columns %}
+            {% set value = row[column] %}
+            <td class="{{ 'num' if value is number else '' }}">{{ value | number if value is number else (value if value is not none else '—') }}</td>
+          {% endfor %}</tr>
+        {% endfor %}
+        </tbody>
+      </table>
+    </div>
+    {% endif %}
+  </section>
+  {% endfor %}
+
+  <footer class="report">
+    {% if spec.methodology %}<strong>Methodology</strong>
+{{ spec.methodology }}
+
+{% endif %}Produced by GDAP — Global Data Automation Platform. Every figure in this report is
+traceable to the dataset version and calculation shown next to it.
+  </footer>
+</div>
+</body>
+</html>

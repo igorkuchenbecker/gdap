@@ -1,0 +1,39 @@
+<!doctype html>
+<html lang="en" data-theme="auto">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>GDAP — Global Data Automation Platform</title>
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>◈</text></svg>">
+<link rel="stylesheet" href="/assets/style.css">
+</head>
+<body>
+<div id="app">
+  <aside class="sidebar">
+    <div class="brand"><span class="mark">◈</span><div><strong>GDAP</strong><small id="env-label">…</small></div></div>
+    <nav id="nav"></nav>
+    <div class="sidebar-foot">
+      <div id="health-pill" class="pill">checking…</div>
+      <a class="muted" href="/docs" target="_blank" rel="noopener">API docs ↗</a>
+    </div>
+  </aside>
+
+  <main>
+    <header class="topbar">
+      <div>
+        <h1 id="page-title">Dashboard</h1>
+        <p id="page-subtitle" class="muted"></p>
+      </div>
+      <div class="topbar-actions">
+        <input id="api-key" class="key-input" type="password" placeholder="X-API-Key (if auth is on)" autocomplete="off">
+        <button id="refresh" class="btn" title="Refresh">↻</button>
+        <button id="theme" class="btn" title="Toggle theme">◐</button>
+      </div>
+    </header>
+    <section id="view" class="view"><div class="loading">loading…</div></section>
+  </main>
+</div>
+<div id="toast" class="toast" hidden></div>
+<script type="module" src="/assets/app.js"></script>
+</body>
+</html>

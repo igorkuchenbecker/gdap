@@ -1,0 +1,40 @@
+# GDAP base configuration. Environment variables override every value:
+#   GDAP_API__PORT=9000  GDAP_OBSERVABILITY__LOG_FORMAT=json
+# Never put secrets here — use references such as env:MY_SECRET.
+app_name: GDAP
+environment: development
+
+api:
+  host: 127.0.0.1
+  port: 8000
+  docs_enabled: true
+
+security:
+  auth_enabled: true
+  sql_write_enabled: false
+  sql_destructive_enabled: false
+
+ingestion:
+  chunk_rows: 250000
+  max_retries: 3
+
+quality:
+  fail_below_score: 60.0
+  warn_below_score: 85.0
+
+worker:
+  concurrency: 2
+  scheduler_enabled: true
+
+ai:
+  provider: heuristic       # switch to "anthropic" and set ANTHROPIC_API_KEY to enable LLM mode
+  model: claude-opus-5
+
+observability:
+  log_level: INFO
+  log_format: console
+
+locale:
+  default_locale: en_US
+  default_timezone: UTC
+  default_currency: USD

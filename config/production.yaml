@@ -1,0 +1,22 @@
+# Production overlay. Apply with GDAP_ENVIRONMENT=production.
+environment: production
+debug: false
+
+api:
+  host: 0.0.0.0
+  docs_enabled: false
+  cors_origins: []
+
+security:
+  auth_enabled: true
+  allow_anonymous_reads: false
+  sql_write_enabled: false
+  sql_destructive_enabled: false
+  mask_restricted_columns: true
+
+observability:
+  log_level: INFO
+  log_format: json
+
+worker:
+  concurrency: 8
