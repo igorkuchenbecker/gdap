@@ -261,7 +261,10 @@ class PdfRenderer:
             raise UnsupportedOperationError(
                 "PDF rendering requires WeasyPrint: pip install weasyprint "
                 "(HTML, XLSX, CSV, JSON and Markdown are available without it)",
-                details={"format": "pdf", "available": [f.value for f in RENDERERS]},
+                details={
+                    "format": "pdf",
+                    "available": [f.value for f in RENDERERS if f is not ReportFormat.PDF],
+                },
             ) from exc
         return HTML(string=html.decode("utf-8")).write_pdf()  # pragma: no cover - optional dep
 

@@ -11,7 +11,7 @@ from gdap.cli.console import console, emit, success, table, truncate
 from gdap.cli.main import run_safely, session
 from gdap.core.services.report_service import ReportService
 
-app = typer.Typer(help="Reports: generate, list, download.", no_args_is_help=True)
+app = typer.Typer(help="Reports: create, list, download.", no_args_is_help=True)
 
 
 @app.command("create")
