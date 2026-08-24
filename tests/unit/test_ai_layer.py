@@ -129,6 +129,17 @@ def test_planner_reports_when_it_cannot_identify_a_dataset() -> None:
         plan_pipeline("do something clever", datasets=[])
 
 
+def test_auto_generated_pipeline_name_does_not_cut_a_word_in_half() -> None:
+    plan = plan_pipeline(
+        "read lojinha vendas.csv into transactions, clean missing values, then validate",
+        datasets=DATASETS,
+    )
+    assert not plan.spec.name.endswith(
+        ("_clea", "_val", "_valida", "_missi", "_mis")
+    ), plan.spec.name
+    assert plan.spec.name[-1] != "_"
+
+
 def test_analysis_steps_read_row_level_data_after_an_aggregate() -> None:
     plan = plan_pipeline(
         "aggregate revenue per region and compare with last month", datasets=DATASETS

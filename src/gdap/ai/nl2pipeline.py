@@ -370,7 +370,12 @@ def _title(request: str) -> str:
 
 def _slug(text: str) -> str:
     cleaned = re.sub(r"[^a-z0-9]+", "_", text.lower()).strip("_")
-    return (cleaned[:48] or "generated_pipeline").rstrip("_")
+    if not cleaned:
+        return "generated_pipeline"
+    truncated = cleaned[:48]
+    if len(cleaned) > 48 and "_" in truncated:
+        truncated = truncated.rsplit("_", 1)[0]
+    return truncated.rstrip("_") or "generated_pipeline"
 
 
 def _guess_dataset(request: str, datasets: list[dict[str, Any]]) -> str | None:
