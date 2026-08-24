@@ -31,6 +31,9 @@ from gdap.security.sql_guard import SqlPolicy, guard
         "SELECT * FROM read_parquet('/root/secrets.parquet')",
         "SELECT getenv('ANTHROPIC_API_KEY')",
         "SELECT * FROM glob('/**')",
+        "SELECT load_extension('evil')",
+        "SELECT * FROM sales INTO OUTFILE '/tmp/exfiltrated.csv'",
+        "SELECT * FROM sales INTO DUMPFILE '/tmp/exfiltrated.csv'",
     ],
 )
 def test_dangerous_statements_are_blocked_by_default(statement: str) -> None:

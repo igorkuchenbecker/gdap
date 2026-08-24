@@ -70,7 +70,13 @@ _ESCAPE_FUNCTIONS = {
     "system",
     "shell",
     "getenv",
+    "load_extension",
 }
+
+#: Clauses (not function calls) that write query results to the filesystem on engines that
+#: support them — DuckDB rejects these today, but the guard is meant to hold regardless of which
+#: engine ends up executing the statement (see module docstring: "conservative and syntax-level").
+_ESCAPE_CLAUSES = re.compile(r"\binto\s+(outfile|dumpfile)\b")
 
 _DESTRUCTIVE = {"drop", "truncate", "alter", "vacuum", "create"}
 _WRITE = {"insert", "update", "delete", "merge", "replace", "upsert"}
@@ -174,6 +180,11 @@ def guard(sql: str, policy: SqlPolicy | None = None) -> GuardedStatement:
                     f"'{token}' is blocked by the SQL safety layer",
                     details={"token": token, "reason": "filesystem/network access"},
                 )
+        if _ESCAPE_CLAUSES.search(lowered):
+            raise SqlSafetyError(
+                "'INTO OUTFILE/DUMPFILE' is blocked by the SQL safety layer",
+                details={"reason": "filesystem escape hatch"},
+            )
 
     kind = classify(raw)
 
