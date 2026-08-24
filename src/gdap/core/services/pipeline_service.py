@@ -93,8 +93,23 @@ class PipelineService:
         return row
 
     def delete(self, reference: str) -> None:
+        """Delete the pipeline definition. Run history is kept: jobs already carry their own
+        copy of pipeline_name/pipeline_version/spec, so detaching them (rather than blocking the
+        delete, or letting the FK constraint reject it outright) is enough to keep them readable.
+        """
         require(self.context.principal, Permission.PIPELINE_WRITE, resource="pipeline")
         row = self.repo.require_by_name_or_id(reference)
+
+        from sqlalchemy import delete, update
+
+        from gdap.storage.models import Job, PipelineVersion
+
+        self.context.session.execute(
+            update(Job).where(Job.pipeline_id == row.id).values(pipeline_id=None)
+        )
+        self.context.session.execute(
+            delete(PipelineVersion).where(PipelineVersion.pipeline_id == row.id)
+        )
         self.repo.delete(row.id)
         self.context.audit.record(
             self.context.principal,

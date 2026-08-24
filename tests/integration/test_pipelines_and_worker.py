@@ -320,3 +320,40 @@ def test_scheduler_fires_due_pipelines_and_reschedules(platform, principal, demo
         assert any(job.trigger == "schedule" for job in jobs)
         pipeline = context.pipelines.get("scheduled")
         assert pipeline.next_run_at is not None
+
+
+def test_deleting_a_never_run_pipeline_does_not_crash(
+    context: ServiceContext, demo_dir: Path
+) -> None:
+    """Regression: every pipeline has at least one PipelineVersion row from creation, and that
+    FK (no cascade) made every delete raise a raw IntegrityError, always — not just when a
+    pipeline had job history."""
+    _register(context, demo_dir)
+    context.pipelines.create(ANALYTICS_PIPELINE)
+
+    context.pipelines.delete("sales_flow")
+
+    from gdap.core.errors import NotFoundError
+
+    with pytest.raises(NotFoundError):
+        context.pipelines.get("sales_flow")
+
+
+def test_deleting_a_pipeline_keeps_its_job_history(
+    context: ServiceContext, demo_dir: Path
+) -> None:
+    """The CLI/API promise 'its run history is kept' — jobs carry their own pipeline_name/spec,
+    so detaching them from the deleted pipeline (pipeline_id -> NULL) must not lose anything."""
+    _register(context, demo_dir)
+    context.pipelines.create(ANALYTICS_PIPELINE)
+    job = context.pipelines.run("sales_flow")
+    context.jobs.execute(job)
+    job_id = job.id
+
+    context.pipelines.delete("sales_flow")
+
+    surviving = context.jobs.get(job_id)
+    assert surviving.pipeline_id is None
+    assert surviving.pipeline_name == "sales_flow"
+    assert surviving.state == JobState.SUCCESS.value
+    assert context.jobs.steps(job_id), "step history must survive the pipeline delete too"
