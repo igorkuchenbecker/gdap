@@ -60,6 +60,12 @@ _NAME_HINTS: list[tuple[SemanticType, re.Pattern[str]]] = [
 _SAMPLE_SIZE = 200
 _MATCH_THRESHOLD = 0.85
 
+# Below this many non-null values, "every value is distinct" is nearly guaranteed by chance and
+# tells us nothing — a 3-row quantity column with values [1, 2, 3] is not an identifier. Name-hint
+# matches (``_id``, ``sku``...) are a deliberate signal and skip this gate entirely; only the
+# bare "it happens to be unique" fallback below needs it.
+_MIN_ROWS_FOR_UNIQUENESS_IDENTIFIER = 20
+
 
 def infer_semantic_type(
     series: pl.Series,
@@ -99,7 +105,11 @@ def infer_semantic_type(
                 return semantic
         if _looks_like_epoch(non_null):
             return SemanticType.TIMESTAMP
-        if is_unique and _is_integral(non_null):
+        if (
+            is_unique
+            and _is_integral(non_null)
+            and len(non_null) >= _MIN_ROWS_FOR_UNIQUENESS_IDENTIFIER
+        ):
             return SemanticType.IDENTIFIER
         if distinct_ratio is not None and distinct_ratio < 0.02 and _is_integral(non_null):
             return SemanticType.ORDINAL
@@ -120,7 +130,9 @@ def infer_semantic_type(
                 return semantic
         if _parses_as_date(sample):
             return SemanticType.DATE
-        if is_unique or (distinct_ratio or 0) > 0.95:
+        if (
+            is_unique or (distinct_ratio or 0) > 0.95
+        ) and len(non_null) >= _MIN_ROWS_FOR_UNIQUENESS_IDENTIFIER:
             return SemanticType.IDENTIFIER
         average_length = sum(len(v) for v in sample) / max(len(sample), 1)
         if (distinct_ratio or 1) <= 0.5 and average_length <= 64:
