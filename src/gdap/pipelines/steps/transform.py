@@ -281,28 +281,28 @@ def join(context: StepContext, step: StepSpec) -> StepOutcome:
     right_on = context.option(step, "right_on")
 
     if on:
-        keys = [on] if isinstance(on, str) else list(on)
-        require_columns(left, keys, context="join (left)")
-        require_columns(right, keys, context="join (right)")
-        result = left.join(right, on=keys, how=how, coalesce=True)  # type: ignore[arg-type]
+        left_keys = right_keys = [on] if isinstance(on, str) else list(on)
+        require_columns(left, left_keys, context="join (left)")
+        require_columns(right, right_keys, context="join (right)")
+        result = left.join(right, on=left_keys, how=how, coalesce=True)  # type: ignore[arg-type]
     elif left_on and right_on:
+        left_keys = [left_on] if isinstance(left_on, str) else list(left_on)
+        right_keys = [right_on] if isinstance(right_on, str) else list(right_on)
         result = left.join(
-            right,
-            left_on=[left_on] if isinstance(left_on, str) else list(left_on),
-            right_on=[right_on] if isinstance(right_on, str) else list(right_on),
-            how=how,  # type: ignore[arg-type]
-            coalesce=True,
+            right, left_on=left_keys, right_on=right_keys, how=how, coalesce=True  # type: ignore[arg-type]
         )
     else:
         raise ValidationFailedError("join requires 'on' or both 'left_on' and 'right_on'")
 
-    unmatched = (
-        left.height - result.height
-        if how in {"inner", "semi"}
-        else result[result.columns[-1]].null_count()
-        if how == "left" and result.width > left.width
-        else 0
-    )
+    if how in {"inner", "semi"}:
+        unmatched = left.height - result.height
+    elif how == "left":
+        # Counting nulls in the result's trailing column breaks the moment the right side has a
+        # genuine null there for a *matched* row — an anti-join is the only way to count rows
+        # that truly found no match on the right, regardless of what their values look like.
+        unmatched = left.join(right, left_on=left_keys, right_on=right_keys, how="anti").height
+    else:
+        unmatched = 0
     context.publish(step.output or context.current or "data", result)
     return StepOutcome(
         frame=result,
