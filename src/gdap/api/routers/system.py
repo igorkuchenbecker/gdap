@@ -121,6 +121,14 @@ def create_api_key(body: CreateApiKeyBody, context: AdminDep) -> dict[str, Any]:
     users = UserRepository(context.session, context.org_id)
     email = body.user_email or context.principal.email or f"{body.name}@service.local"
     user = users.by_email(email) or users.create(email=email, name=body.name, role=body.role)
+    # Sync the role only for a *named service account* distinct from the caller (see
+    # gdap.cli.main.key_create for why a reused identity's role must not silently stay stale).
+    # Never for the caller's own account: when `user_email` is omitted this endpoint defaults to
+    # "issue myself a scoped-down key" (self-service), and that must never be able to change the
+    # caller's own stored role as a side effect — a key can only ever narrow permissions, and an
+    # admin issuing themselves a narrower key must not risk demoting their own account.
+    if user.role != body.role and user.id != context.principal.user_id:
+        user.role = body.role
     issued = api_keys.generate()
     expires_at = (
         datetime.now(UTC) + timedelta(days=body.expires_in_days) if body.expires_in_days else None

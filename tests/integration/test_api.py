@@ -290,3 +290,86 @@ def test_api_key_authentication(platform: Any, demo_dir: Path) -> None:
 
     platform.settings.security.auth_enabled = False
     container_module._PLATFORM = None
+
+
+def test_reissuing_a_key_for_the_same_name_updates_the_role(platform: Any, demo_dir: Path) -> None:
+    """Regression: `create_api_key` used to reuse an existing user by e-mail without updating
+    their stored role, so a second `system key create <name> --role X` for the same name was a
+    silent no-op — the issued key's *scopes* claimed the new role, but the principal's actual
+    permissions still came from the user's stale role (scopes only ever narrow a user's
+    permissions, never widen them — see security/rbac.py), so nothing the new role granted
+    actually worked. Found running the GDAP↔JARVIS integration against a live server: a key
+    re-issued with --role engineer still could not ingest data because the underlying user was
+    still "analyst" from the first issuance. Needs auth genuinely enforced (not the testing
+    profile's auth_enabled=false) or every request would run as the org owner regardless of
+    which key's scopes are sent, and the bug would never be exercised.
+    """
+    from fastapi.testclient import TestClient
+
+    import gdap.core.container as container_module
+    from gdap.api.app import create_app
+    from gdap.core.enums import Role
+    from gdap.security import api_keys
+    from gdap.security.rbac import permissions_for
+    from gdap.storage.repositories import ApiKeyRepository, UserRepository
+
+    platform.settings.security.auth_enabled = True
+    container_module._PLATFORM = platform
+
+    with platform.db.session() as session:
+        principal = platform.resolve_principal(session)
+        bootstrap = api_keys.generate()
+        owner = UserRepository(session, principal.org_id).by_email(principal.email)
+        ApiKeyRepository(session, principal.org_id).create(
+            user_id=owner.id,
+            name="bootstrap-admin",
+            prefix=bootstrap.prefix,
+            key_hash=bootstrap.key_hash,
+            scopes=[p.value for p in permissions_for(Role.ADMIN)],
+        )
+    admin_headers = {"X-API-Key": bootstrap.plaintext}
+
+    with TestClient(create_app(platform=platform)) as client:
+        # user_email is explicit and distinct from the admin's own account on purpose: the bug
+        # only manifests for a *named service identity* reused across calls. Omitting user_email
+        # here would make this endpoint's "issue myself a key" fallback resolve to the admin's
+        # own already-privileged account, masking the bug entirely (its permissions are a
+        # superset of every role, so the buggy intersection would "accidentally" look correct).
+        first = client.post(
+            "/api/v1/admin/api-keys",
+            json={"name": "svc", "user_email": "svc@service.local", "role": "analyst"},
+            headers=admin_headers,
+        ).json()
+        assert "dataset:write" not in first["scopes"]
+
+        second = client.post(
+            "/api/v1/admin/api-keys",
+            json={"name": "svc", "user_email": "svc@service.local", "role": "engineer"},
+            headers=admin_headers,
+        ).json()
+        assert "dataset:write" in second["scopes"]
+
+        # The second key must actually be able to do what "engineer" implies (ingest data), not
+        # just carry the right scope list — the bug was specifically that the *principal* stayed
+        # capped to the old role despite the key's own scopes looking correct.
+        svc_headers = {"X-API-Key": second["api_key"]}
+        created = client.post(
+            "/api/v1/sources",
+            json={
+                "name": "svc_source",
+                "type": "file",
+                "connector": "file.csv",
+                "config": {"path": str(demo_dir), "pattern": "*.csv"},
+            },
+            headers=svc_headers,
+        )
+        assert created.status_code == 201
+        ingested = client.post(
+            "/api/v1/sources/svc_source/ingest",
+            json={"object": "regions.csv", "dataset": "svc_regions"},
+            headers=svc_headers,
+        )
+        assert ingested.status_code == 200, ingested.json()
+
+    platform.settings.security.auth_enabled = False
+    container_module._PLATFORM = None

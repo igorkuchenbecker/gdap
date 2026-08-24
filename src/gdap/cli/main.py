@@ -247,6 +247,12 @@ def key_create(
             users = UserRepository(context.session, context.org_id)
             email = f"{name}@service.local"
             user = users.by_email(email) or users.create(email=email, name=name, role=role)
+            if user.role != role:
+                # An explicit --role is authoritative for a named service identity: reusing an
+                # existing user must not silently keep issuing keys capped to its old role (a
+                # key's scopes can only ever *restrict* the user's permissions, never expand
+                # them — see security/rbac.py — so a stale role would make --role a no-op).
+                user.role = role
             issued = api_keys.generate()
             expires_at = (
                 datetime.now(UTC) + timedelta(days=expires_in_days) if expires_in_days else None
