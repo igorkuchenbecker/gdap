@@ -4,7 +4,7 @@ version = "0.1.0"
 description = "GDAP - Global Data Automation Platform: connect, profile, validate, transform, analyze, explain and automate data at scale."
 readme = "README.md"
 requires-python = ">=3.11"
-license = { text = "Apache-2.0" }
+license = { text = "MIT" }
 authors = [{ name = "GDAP Team" }]
 keywords = ["data", "etl", "pipeline", "analytics", "observability", "ai"]
 
