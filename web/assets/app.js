@@ -7,14 +7,24 @@
  * fix belongs in the API.
  */
 
-const state = { page: "dashboard", apiKey: localStorage.getItem("gdap.apiKey") || "", info: null };
+const state = {
+  page: "dashboard",
+  apiKey: localStorage.getItem("gdap.apiKey") || "",
+  info: null,
+};
 
 // ────────────────────────────────────────── api client ────────────────────────────────────
 
 async function api(path, { method = "GET", body } = {}) {
-  const headers = { "Content-Type": "application/json" };
+  const isForm = body instanceof FormData;
+  const headers = {};
+  if (body && !isForm) headers["Content-Type"] = "application/json";
   if (state.apiKey) headers["X-API-Key"] = state.apiKey;
-  const response = await fetch(path, { method, headers, body: body ? JSON.stringify(body) : undefined });
+  const response = await fetch(path, {
+    method,
+    headers,
+    body: body ? (isForm ? body : JSON.stringify(body)) : undefined,
+  });
   const text = await response.text();
   let payload = null;
   try { payload = text ? JSON.parse(text) : null; } catch { payload = { raw: text }; }
@@ -46,6 +56,14 @@ const badge = (value) => el("span", { class: `badge ${value ?? "info"}` }, value
 const num = (value) => (value === null || value === undefined ? "—" : Number(value).toLocaleString());
 const short = (value, n = 8) => (value ? String(value).slice(0, n) : "—");
 const when = (value) => (value ? String(value).replace("T", " ").slice(0, 19) : "—");
+const bytes = (value) => {
+  if (!Number.isFinite(value)) return "—";
+  const units = ["B", "KB", "MB", "GB"];
+  let size = value;
+  let unit = 0;
+  while (size >= 1024 && unit < units.length - 1) { size /= 1024; unit += 1; }
+  return `${size >= 10 || unit === 0 ? size.toFixed(0) : size.toFixed(1)} ${units[unit]}`;
+};
 
 function table(columns, rows, { onRow } = {}) {
   if (!rows.length) return el("div", { class: "empty" }, "nothing here yet");
@@ -63,7 +81,14 @@ function table(columns, rows, { onRow } = {}) {
 
 function card(title, ...children) { return el("div", { class: "card" }, el("h3", {}, title), ...children); }
 function stat(title, value, sub) {
-  return card(title, el("div", { class: "stat" }, value, sub ? el("small", {}, ` ${sub}`) : null));
+  return el("div", { class: "card stat-card" }, el("h3", {}, title),
+    el("div", { class: "stat" }, value, sub ? el("small", {}, sub) : null));
+}
+
+function sectionTitle(title, description, action) {
+  return el("div", { class: "section-title" },
+    el("div", {}, el("h2", {}, title), description ? el("p", {}, description) : null),
+    action || null);
 }
 
 function toast(message, isError = false) {
@@ -86,37 +111,141 @@ function insight(item) {
     el("div", { class: "e" }, `confidence ${Math.round((item.confidence ?? 0) * 100)}%${evidence ? ` · ${evidence}` : ""}`));
 }
 
+function uploadStudio({ compact = false } = {}) {
+  let selectedFile = null;
+  const fileInput = el("input", {
+    type: "file",
+    name: "file",
+    accept: ".csv,.tsv,.json,.ndjson,.jsonl,.parquet,.pq,.xlsx,.xls",
+    required: "true",
+  });
+  const dropContent = el("div", {},
+    el("div", { class: "drop-glyph", "aria-hidden": "true" }, "↥"),
+    el("strong", {}, "Drop a data file here"),
+    el("p", {}, "or click to browse · CSV, JSON, Parquet or Excel"));
+  const dropzone = el("label", { class: "dropzone" }, fileInput, dropContent);
+  const submit = el("button", { class: "btn primary", type: "submit", disabled: "true" }, "Import dataset");
+  const progress = el("div", { class: "upload-progress", hidden: "true" }, el("span"));
+
+  function setFile(file) {
+    if (!file) return;
+    selectedFile = file;
+    submit.disabled = false;
+    dropContent.replaceChildren(
+      el("div", { class: "drop-glyph", "aria-hidden": "true" }, "✓"),
+      el("div", { class: "file-ready" },
+        el("span", { class: "file-name" }, file.name),
+        el("span", { class: "file-meta" }, `${bytes(file.size)} · ready to import`)),
+      el("p", {}, "Click or drop another file to replace"));
+  }
+
+  fileInput.addEventListener("change", () => setFile(fileInput.files?.[0]));
+  for (const eventName of ["dragenter", "dragover"]) {
+    dropzone.addEventListener(eventName, (event) => {
+      event.preventDefault();
+      dropzone.classList.add("dragging");
+    });
+  }
+  for (const eventName of ["dragleave", "drop"]) {
+    dropzone.addEventListener(eventName, (event) => {
+      event.preventDefault();
+      dropzone.classList.remove("dragging");
+    });
+  }
+  dropzone.addEventListener("drop", (event) => {
+    const file = event.dataTransfer?.files?.[0];
+    if (file) setFile(file);
+  });
+
+  const form = el("form", {
+    class: "upload-form",
+    onsubmit: async (event) => {
+      event.preventDefault();
+      if (!selectedFile) return;
+      const fields = new FormData(event.target);
+      fields.set("file", selectedFile, selectedFile.name);
+      if (!fields.get("dataset")) fields.delete("dataset");
+      if (!fields.get("source")) fields.delete("source");
+      submit.disabled = true;
+      submit.textContent = "Importing…";
+      progress.hidden = false;
+      try {
+        const result = await api("/api/v1/sources/upload", { method: "POST", body: fields });
+        const dataset = result.result?.dataset || fields.get("dataset") || selectedFile.name.replace(/\.[^.]+$/, "");
+        toast(`${dataset} is ready to explore`);
+        go("datasets", { dataset });
+      } catch (error) {
+        toast(error.message, true);
+        submit.disabled = false;
+        submit.textContent = "Import dataset";
+        progress.hidden = true;
+      }
+    },
+  },
+    dropzone,
+    el("div", { class: "upload-fields" },
+      el("div", { class: "field" },
+        el("label", { for: compact ? "quick-dataset" : "source-dataset" }, "Dataset name · optional"),
+        el("input", { id: compact ? "quick-dataset" : "source-dataset", type: "text", name: "dataset", placeholder: "e.g. monthly_revenue", pattern: "[A-Za-z0-9_-]+" }),
+        el("span", { class: "field-note" }, "Leave blank to derive it from the filename.")),
+      el("div", { class: "field" },
+        el("label", { for: compact ? "quick-source" : "source-name" }, "Source name · optional"),
+        el("input", { id: compact ? "quick-source" : "source-name", type: "text", name: "source", placeholder: "e.g. finance_uploads", pattern: "[A-Za-z0-9_-]+" })),
+      el("div", { class: "row" }, submit, el("span", { class: "field-note" }, "Stored in your governed workspace")),
+      progress));
+
+  return el("div", { class: "card upload-card", id: compact ? "quick-import" : "import-data" },
+    el("div", { class: "upload-head" },
+      el("div", {}, el("h3", {}, "Import a file"), el("p", {}, "Upload, register and ingest in one step.")),
+      el("span", { class: "eyebrow" }, "01 / CAPTURE")),
+    form);
+}
+
 // ─────────────────────────────────────────── pages ────────────────────────────────────────
 
 const pages = {
   dashboard: {
-    title: "Dashboard", subtitle: "What the platform knows right now",
+    kicker: "CONTROL ROOM", title: "Workspace", subtitle: "From raw files to decisions, with every step visible",
     async render() {
       const data = await api("/api/v1/system/dashboard");
       const quality = data.quality.average;
-      return el("div", {},
+      const hasData = data.counts.datasets > 0;
+      return el("div", { class: "page-stack" },
+        el("section", { class: "mission" },
+          el("div", { class: "mission-copy" },
+            el("span", { class: "eyebrow" }, hasData ? "YOUR DATA SYSTEM IS LIVE" : "START WITH A SINGLE FILE"),
+            el("h2", {}, "Raw data in. ", el("em", {}, "Clarity out.")),
+            el("p", {}, "GDAP turns scattered files and sources into versioned, quality-checked datasets you can inspect, automate and ask questions about."),
+            el("div", { class: "mission-actions" },
+              el("button", { class: "btn primary", onclick: () => document.getElementById("quick-import")?.scrollIntoView({ behavior: "smooth" }) }, "Import your first file"),
+              el("button", { class: "btn ghost", onclick: () => go("ai") }, "Ask the analyst →"))),
+          el("div", { class: "data-path", "aria-label": "Data workflow" },
+            el("div", { class: "path-node active" }, el("span", { class: "path-index" }, "01"), el("div", {}, el("strong", {}, "Capture"), el("small", {}, `${num(data.counts.sources)} connected sources`)), el("span", { class: "path-state" }, "READY")),
+            el("div", { class: `path-node${hasData ? " active" : ""}` }, el("span", { class: "path-index" }, "02"), el("div", {}, el("strong", {}, "Govern"), el("small", {}, quality === null ? "quality awaits data" : `${quality.toFixed(1)} average quality`)), el("span", { class: "path-state" }, hasData ? "LIVE" : "NEXT")),
+            el("div", { class: `path-node${data.counts.pipelines > 0 ? " active" : ""}` }, el("span", { class: "path-index" }, "03"), el("div", {}, el("strong", {}, "Activate"), el("small", {}, `${num(data.counts.pipelines)} automated pipelines`)), el("span", { class: "path-state" }, data.counts.pipelines > 0 ? "LIVE" : "PLAN")))),
         el("div", { class: "grid" },
-          stat("Datasets", num(data.counts.datasets)),
-          stat("Rows under management", num(data.counts.rows_total)),
-          stat("Sources", num(data.counts.sources)),
-          stat("Pipelines", num(data.counts.pipelines)),
-          stat("Average quality", quality === null ? "—" : quality.toFixed(1), "/100"),
-          stat("Open alerts", num(data.counts.alerts_open))),
-        el("div", { class: "section-title" }, el("h2", {}, "Recent runs")),
-        table([
-          { label: "job", render: (r) => el("code", {}, short(r.id)) },
-          { label: "pipeline", key: "pipeline" },
-          { label: "state", render: (r) => badge(r.state) },
-          { label: "duration", numeric: true, render: (r) => (r.duration_seconds ? `${r.duration_seconds.toFixed(2)}s` : "—") },
-          { label: "created", render: (r) => when(r.created_at) },
-        ], data.recent_jobs, { onRow: (r) => go("jobs", { job: r.id }) }),
-        data.open_alerts.length ? el("div", {},
-          el("div", { class: "section-title" }, el("h2", {}, "Open alerts")),
-          table([
-            { label: "severity", render: (r) => badge(r.severity) },
-            { label: "alert", key: "title" },
-          ], data.open_alerts)) : null,
-        el("div", { class: "section-title" }, el("h2", {}, "Catalog")),
+          stat("Rows managed", num(data.counts.rows_total), "ACROSS EVERY VERSION"),
+          stat("Datasets", num(data.counts.datasets), "READY TO QUERY"),
+          stat("Quality", quality === null ? "—" : quality.toFixed(1), "OUT OF 100"),
+          stat("Open alerts", num(data.counts.alerts_open), data.counts.alerts_open ? "NEEDS ATTENTION" : "ALL CLEAR")),
+        uploadStudio({ compact: true }),
+        el("div", { class: "split" },
+          el("div", { class: "page-stack" },
+            sectionTitle("Recent activity", "Every run stays traceable", el("button", { class: "btn small ghost", onclick: () => go("jobs") }, "View all")),
+            table([
+              { label: "job", render: (r) => el("code", {}, short(r.id)) },
+              { label: "pipeline", key: "pipeline" },
+              { label: "state", render: (r) => badge(r.state) },
+              { label: "duration", numeric: true, render: (r) => (r.duration_seconds ? `${r.duration_seconds.toFixed(2)}s` : "—") },
+              { label: "created", render: (r) => when(r.created_at) },
+            ], data.recent_jobs, { onRow: (r) => go("jobs", { job: r.id }) })),
+          el("div", { class: "page-stack" },
+            sectionTitle("Attention", "Quality and governance signals"),
+            data.open_alerts.length ? table([
+              { label: "severity", render: (r) => badge(r.severity) },
+              { label: "alert", key: "title" },
+            ], data.open_alerts) : el("div", { class: "callout" }, "No open alerts. Your governed assets are operating normally."))),
+        sectionTitle("Data catalog", "Your analysis-ready assets", el("button", { class: "btn small ghost", onclick: () => go("datasets") }, "Open catalog")),
         table([
           { label: "dataset", key: "dataset" },
           { label: "rows", numeric: true, render: (r) => num(r.rows) },
@@ -128,7 +257,7 @@ const pages = {
   },
 
   sources: {
-    title: "Sources", subtitle: "Where data comes from",
+    kicker: "CAPTURE", title: "Sources", subtitle: "Bring files and systems into one governed workspace",
     async render() {
       const [{ items }, connectors] = await Promise.all([api("/api/v1/sources"), api("/api/v1/system/connectors")]);
       const form = el("form", { class: "stack", onsubmit: async (event) => {
@@ -141,7 +270,7 @@ const pages = {
             connector: data.get("connector"),
             config: JSON.parse(data.get("config") || "{}"),
           }});
-          toast("source registered");
+          toast("Source registered");
           go("sources");
         } catch (error) { toast(`${error.message}`, true); }
       }},
@@ -152,9 +281,11 @@ const pages = {
         el("textarea", { name: "config", placeholder: '{"path": "/data/sales", "pattern": "*.csv"}' }),
         el("div", { class: "row" }, el("button", { class: "btn primary", type: "submit" }, "Register source")));
 
-      return el("div", {},
+      return el("div", { class: "page-stack" },
+        uploadStudio(),
+        sectionTitle("Connected sources", `${items.length} registered connection${items.length === 1 ? "" : "s"}`),
         table([
-          { label: "name", key: "name" },
+          { label: "source", render: (r) => el("div", { class: "source-type" }, el("span", {}, "↳"), el("strong", {}, r.name)) },
           { label: "connector", render: (r) => el("code", {}, r.connector) },
           { label: "status", render: (r) => badge(r.status) },
           { label: "classification", render: (r) => badge(r.classification.toLowerCase()) },
@@ -164,15 +295,15 @@ const pages = {
               try { const result = await api(`/api/v1/sources/${r.name}/test`, { method: "POST" });
                 toast(result.ok ? `${r.name}: ${result.message}` : `${r.name}: ${result.message}`, !result.ok);
               } catch (error) { toast(error.message, true); }
-            }}, "test") },
+            }}, "Test") },
         ], items),
-        el("div", { class: "section-title" }, el("h2", {}, "Register a source")),
-        card("New source", form));
+        sectionTitle("Advanced connection", "Databases, APIs and watched directories"),
+        card("Register a source manually", form));
     },
   },
 
   datasets: {
-    title: "Datasets", subtitle: "The catalog, with quality and lineage",
+    kicker: "GOVERN", title: "Datasets", subtitle: "Versioned assets with quality, schema and lineage",
     async render(params) {
       if (params.dataset) return renderDataset(params.dataset);
       const { items } = await api("/api/v1/datasets");
@@ -188,7 +319,7 @@ const pages = {
   },
 
   pipelines: {
-    title: "Pipelines", subtitle: "Declarative automation",
+    kicker: "AUTOMATE", title: "Pipelines", subtitle: "Repeatable data work, declared and reviewable",
     async render() {
       const { items } = await api("/api/v1/pipelines");
       return el("div", {},
@@ -228,7 +359,7 @@ const pages = {
   },
 
   jobs: {
-    title: "Jobs", subtitle: "Every run, with its steps and outcome",
+    kicker: "OBSERVE", title: "Jobs", subtitle: "Every run, step and outcome in one timeline",
     async render(params) {
       if (params.job) return renderJob(params.job);
       const { items } = await api("/api/v1/jobs?limit=40");
@@ -245,7 +376,7 @@ const pages = {
   },
 
   reports: {
-    title: "Reports", subtitle: "Generated artifacts",
+    kicker: "DELIVER", title: "Reports", subtitle: "Decision-ready artifacts generated from governed data",
     async render() {
       const [{ items }, datasets] = await Promise.all([api("/api/v1/reports"), api("/api/v1/datasets")]);
       return el("div", {},
@@ -280,7 +411,7 @@ const pages = {
   },
 
   ai: {
-    title: "AI Analyst", subtitle: "Answers with evidence — never invented numbers",
+    kicker: "UNDERSTAND", title: "AI Analyst", subtitle: "Evidence-backed answers, grounded in your datasets",
     async render() {
       const [datasets, agents] = await Promise.all([api("/api/v1/datasets"), api("/api/v1/agents")]);
       const output = el("div", {});
@@ -320,7 +451,7 @@ const pages = {
   },
 
   governance: {
-    title: "Governance", subtitle: "Lineage, audit and classification",
+    kicker: "TRUST", title: "Governance", subtitle: "Lineage, audit and classification without the paperwork",
     async render() {
       const [audit, classification, retention] = await Promise.all([
         api("/api/v1/audit?limit=40"), api("/api/v1/classification"), api("/api/v1/retention/candidates"),
@@ -413,9 +544,10 @@ async function act(path, message, body) {
 // ─────────────────────────────────────────── shell ────────────────────────────────────────
 
 const NAV = [
-  ["dashboard", "◧ Dashboard"], ["sources", "⚯ Sources"], ["datasets", "▤ Datasets"],
-  ["pipelines", "⇶ Pipelines"], ["jobs", "◷ Jobs"], ["reports", "▦ Reports"],
-  ["ai", "✦ AI Analyst"], ["governance", "⚖ Governance"],
+  ["dashboard", "⌂", "Workspace", "01"], ["sources", "↳", "Sources", "02"],
+  ["datasets", "▤", "Datasets", "03"], ["pipelines", "⇶", "Pipelines", "04"],
+  ["jobs", "◷", "Jobs", "05"], ["reports", "▦", "Reports", "06"],
+  ["ai", "✦", "AI Analyst", "07"], ["governance", "◇", "Governance", "08"],
 ];
 
 let currentParams = {};
@@ -430,15 +562,18 @@ function go(page, params = {}) {
 
 async function render() {
   const page = pages[state.page] || pages.dashboard;
+  document.getElementById("page-kicker").textContent = page.kicker || "GDAP";
   document.getElementById("page-title").textContent = page.title;
   document.getElementById("page-subtitle").textContent = page.subtitle;
   for (const button of document.querySelectorAll("#nav button")) {
     button.classList.toggle("active", button.dataset.page === state.page);
   }
   const view = document.getElementById("view");
-  view.replaceChildren(el("div", { class: "loading" }, "loading…"));
+  view.replaceChildren(el("div", { class: "loading" }, el("span"), "Loading workspace…"));
   try {
-    view.replaceChildren(await page.render(currentParams));
+    const content = await page.render(currentParams);
+    content.classList.add("page-stack");
+    view.replaceChildren(content);
   } catch (error) {
     view.replaceChildren(el("div", { class: "empty" },
       el("p", {}, error.message),
@@ -449,8 +584,13 @@ async function render() {
 
 async function boot() {
   const nav = document.getElementById("nav");
-  nav.replaceChildren(...NAV.map(([page, label]) =>
-    el("button", { "data-page": page, onclick: () => go(page) }, label)));
+  nav.replaceChildren(...NAV.map(([page, icon, label, key]) =>
+    el("button", { "data-page": page, onclick: () => go(page), title: label },
+      el("span", { class: "nav-icon", "aria-hidden": "true" }, icon),
+      el("span", {}, label),
+      el("span", { class: "nav-key", "aria-hidden": "true" }, key))));
+
+  document.querySelector(".brand").addEventListener("click", () => go("dashboard"));
 
   const keyInput = document.getElementById("api-key");
   keyInput.value = state.apiKey;
@@ -472,14 +612,14 @@ async function boot() {
 
   try {
     state.info = await api("/api/v1/system/info");
-    document.getElementById("env-label").textContent = `${state.info.environment} · v${state.info.version}`;
+    document.getElementById("env-label").textContent = `${state.info.environment} / v${state.info.version}`;
   } catch { document.getElementById("env-label").textContent = "offline"; }
 
   try {
     const health = await api("/health");
     const pill = document.getElementById("health-pill");
-    pill.className = `pill ${health.ok ? "ok" : "bad"}`;
-    pill.textContent = health.ok ? "● all systems ok" : "● degraded";
+    pill.className = `health ${health.ok ? "ok" : "bad"}`;
+    pill.replaceChildren(el("span"), health.ok ? "Platform operational" : "Platform degraded");
   } catch { /* health pill stays neutral */ }
 
   const params = new URLSearchParams(location.hash.slice(1));

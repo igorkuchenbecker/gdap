@@ -1,39 +1,49 @@
 <!doctype html>
-<html lang="en" data-theme="auto">
+<html lang="en" data-theme="dark">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>GDAP — Global Data Automation Platform</title>
-<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>◈</text></svg>">
+<meta name="theme-color" content="#090b0e">
+<meta name="description" content="Turn raw files into governed, analysis-ready data.">
+<title>GDAP — Data operations, without the busywork</title>
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'><rect width='64' height='64' rx='16' fill='%23B7FF5A'/><path d='M17 21h30M17 32h22M17 43h14' stroke='%23090B0E' stroke-width='5' stroke-linecap='round'/></svg>">
 <link rel="stylesheet" href="/assets/style.css">
 </head>
 <body>
 <div id="app">
   <aside class="sidebar">
-    <div class="brand"><span class="mark">◈</span><div><strong>GDAP</strong><small id="env-label">…</small></div></div>
-    <nav id="nav"></nav>
+    <button class="brand" type="button" aria-label="Open dashboard" onclick="location.hash='page=dashboard'">
+      <span class="brand-mark" aria-hidden="true"><i></i><i></i><i></i></span>
+      <span><strong>GDAP</strong><small>DATA OPERATIONS</small></span>
+    </button>
+    <div class="workspace-label"><span>WORKSPACE</span><strong id="env-label">connecting…</strong></div>
+    <nav id="nav" aria-label="Main navigation"></nav>
     <div class="sidebar-foot">
-      <div id="health-pill" class="pill">checking…</div>
-      <a class="muted" href="/docs" target="_blank" rel="noopener">API docs ↗</a>
+      <div id="health-pill" class="health"><span></span> Checking platform</div>
+      <a class="docs-link" href="/docs" target="_blank" rel="noopener"><span>API reference</span><span aria-hidden="true">↗</span></a>
     </div>
   </aside>
 
   <main>
     <header class="topbar">
-      <div>
+      <div class="page-heading">
+        <span id="page-kicker" class="page-kicker">OVERVIEW</span>
         <h1 id="page-title">Dashboard</h1>
         <p id="page-subtitle" class="muted"></p>
       </div>
       <div class="topbar-actions">
-        <input id="api-key" class="key-input" type="password" placeholder="X-API-Key (if auth is on)" autocomplete="off">
-        <button id="refresh" class="btn" title="Refresh">↻</button>
-        <button id="theme" class="btn" title="Toggle theme">◐</button>
+        <label class="key-field" title="Stored only in this browser">
+          <span aria-hidden="true">⌁</span>
+          <input id="api-key" class="key-input" type="password" aria-label="API key" placeholder="API key" autocomplete="off">
+        </label>
+        <button id="refresh" class="icon-btn" type="button" title="Refresh current page" aria-label="Refresh current page">↻</button>
+        <button id="theme" class="icon-btn" type="button" title="Toggle color theme" aria-label="Toggle color theme">◐</button>
       </div>
     </header>
-    <section id="view" class="view"><div class="loading">loading…</div></section>
+    <section id="view" class="view" aria-live="polite"><div class="loading"><span></span>Loading workspace…</div></section>
   </main>
 </div>
-<div id="toast" class="toast" hidden></div>
+<div id="toast" class="toast" role="status" aria-live="polite" hidden></div>
 <script type="module" src="/assets/app.js"></script>
 </body>
 </html>
