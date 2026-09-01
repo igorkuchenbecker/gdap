@@ -8,6 +8,9 @@ api:
   host: 127.0.0.1
   port: 8000
   docs_enabled: true
+  # Ceiling for any request body, not just uploads, enforced before the body is parsed.
+  # Raising it raises what a single request can make this process buffer.
+  max_upload_mb: 512
 
 security:
   auth_enabled: true

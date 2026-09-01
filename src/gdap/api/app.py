@@ -19,7 +19,11 @@ from fastapi.staticfiles import StaticFiles
 
 from gdap import __version__
 from gdap.api.errors import install_error_handlers
-from gdap.api.middleware import RateLimitMiddleware, TracingMiddleware
+from gdap.api.middleware import (
+    BodySizeLimitMiddleware,
+    RateLimitMiddleware,
+    TracingMiddleware,
+)
 from gdap.api.routers import (
     agents,
     alerts,
@@ -80,6 +84,22 @@ def create_app(settings: Settings | None = None, platform: Platform | None = Non
     )
     app.state.platform = active
 
+    # Registered first, which in Starlette means innermost: `add_middleware` inserts at the
+    # front, so the *last* registration ends up outermost. Innermost is the right place anyway.
+    # Neither tracing nor the rate limiter reads the request body, so the parser -- the thing
+    # that actually buffers -- is still downstream of this check; and sitting inside tracing
+    # means a rejected request still gets a trace id and still appears in the request log,
+    # which a body-size rejection is exactly the kind of event you want to find later.
+    # Registered first, which in Starlette means innermost: `add_middleware` inserts at the
+    # front, so the *last* registration ends up outermost. Innermost is the right place anyway.
+    # Neither tracing nor the rate limiter reads the request body, so the parser -- the thing
+    # that actually buffers -- is still downstream of this check; and sitting inside tracing
+    # means a rejected request still gets a trace id and still appears in the request log,
+    # which a body-size rejection is exactly the kind of event you want to find later.
+    app.add_middleware(
+        BodySizeLimitMiddleware,
+        max_bytes=config.api.max_upload_mb * 1024 * 1024,
+    )
     app.add_middleware(
         RateLimitMiddleware,
         limit_per_minute=config.api.rate_limit_per_minute,

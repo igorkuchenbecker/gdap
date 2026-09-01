@@ -99,9 +99,12 @@ def upload_source(
     health checks included. As a plain ``def`` FastAPI runs it in the threadpool, where blocking
     work belongs.
     """
-    # Checked again inside SourceService.register/ingest (defense in depth), but checking here
-    # first means a principal without these permissions never causes a byte of the upload to be
-    # read off the wire or written to staging.
+    # Checked again inside SourceService.register/ingest (defense in depth). Checking here first
+    # means a principal without these permissions never gets a byte written to *staging* — the
+    # permanent location. It does not stop the body being read: by the time any handler runs,
+    # FastAPI has resolved `file`, and resolving an UploadFile means Starlette already parsed and
+    # spooled the whole multipart body. What keeps an oversized body from being buffered at all
+    # is BodySizeLimitMiddleware, which runs ahead of the parser.
     require(context.principal, Permission.SOURCE_WRITE, Permission.DATASET_WRITE, resource="source upload")
 
     if not file.filename:
