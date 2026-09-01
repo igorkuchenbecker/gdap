@@ -13,10 +13,11 @@ from fastapi import APIRouter, File, Form, UploadFile, status
 from gdap.api.deps import ContextDep, PaginationDep
 from gdap.api.schemas import CreateSourceRequest, IngestBody
 from gdap.core.contracts import ConnectionTestResult, PipelineSpec, SourceSpec, StepSpec
-from gdap.core.enums import DataFormat, IngestionMode, SourceType, TriggerType
+from gdap.core.enums import DataFormat, IngestionMode, Permission, SourceType, TriggerType
 from gdap.core.errors import PayloadTooLargeError, UnsupportedOperationError, ValidationFailedError
 from gdap.core.services.source_service import SourceService
 from gdap.ingestion import IngestRequest
+from gdap.security.rbac import require
 
 router = APIRouter(prefix="/api/v1/sources", tags=["sources"])
 
@@ -88,9 +89,14 @@ async def upload_source(
     """Stream an uploaded file to staging, register it as a file source, and ingest it.
 
     This is the no-JSON, no-manual-file-prep on-ramp for the web UI: pick a file, get a
-    queryable dataset back. Everything else (permissions, tenant scoping, audit, the ingestion
-    transaction) goes through the same :class:`SourceService` the JSON API uses.
+    queryable dataset back. Everything else (tenant scoping, audit, the ingestion transaction)
+    goes through the same :class:`SourceService` the JSON API uses.
     """
+    # Checked again inside SourceService.register/ingest (defense in depth), but checking here
+    # first means a principal without these permissions never causes a byte of the upload to be
+    # read off the wire or written to staging.
+    require(context.principal, Permission.SOURCE_WRITE, Permission.DATASET_WRITE, resource="source upload")
+
     if not file.filename:
         raise ValidationFailedError("the uploaded file must have a name")
 
@@ -102,12 +108,17 @@ async def upload_source(
             details={"filename": file.filename, "supported": sorted(_UPLOAD_EXTENSIONS)},
         )
 
-    source_name = source or slug
+    upload_id = uuid.uuid4().hex
+    # An explicit `source` names a durable connection the caller intends to reuse; an omitted one
+    # gets a per-upload suffix so re-importing the same file (a new drop of "monthly_revenue.csv")
+    # doesn't 409 against the source created by the previous import. The dataset name stays stable
+    # either way, so repeated uploads land as new versions of the same dataset.
+    source_name = source or f"{slug}-{upload_id[:8]}"
     dataset_name = dataset or slug
     limit_bytes = context.settings.api.max_upload_mb * 1024 * 1024
 
     staging = context.platform.staging
-    key = f"{context.org_id}/uploads/{uuid.uuid4().hex}/{slug}{suffix}"
+    key = f"{context.org_id}/uploads/{upload_id}/{slug}{suffix}"
     target = staging.local_path(key)
     target.parent.mkdir(parents=True, exist_ok=True)
 

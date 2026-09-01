@@ -20,7 +20,9 @@ def test_upload_csv_derives_names_from_filename(api_client: Any) -> None:
     body = response.json()
 
     assert body["status"] == "completed"
-    assert body["source"]["name"] == "sales-report"
+    # The source name gets a per-upload suffix (see the repeated-upload test below), but the
+    # dataset name — the stable, versioned catalog entry — stays exactly the derived slug.
+    assert body["source"]["name"].startswith("sales-report-")
     assert body["source"]["connector"] == "file"
     assert body["source"]["type"] == "file"
     assert body["result"]["dataset"] == "sales-report"
@@ -77,7 +79,7 @@ def test_upload_neutralises_path_traversal_in_filename(api_client: Any, platform
     body = response.json()
 
     # the basename survives, sanitised — never the traversal path
-    assert body["source"]["name"] == "passwd"
+    assert body["source"]["name"].startswith("passwd-")
 
     stored_path = body["source"]["config"]["path"]
     staging = platform.settings.paths.staging.resolve()
@@ -102,7 +104,12 @@ def test_upload_enforces_max_upload_mb(api_client: Any, platform: Any) -> None:
 
 
 def test_upload_requires_source_write_permission(platform: Any) -> None:
-    """A viewer-scoped key cannot upload — RBAC applies to this endpoint like any other."""
+    """A viewer-scoped key cannot upload — RBAC applies to this endpoint like any other.
+
+    The permission check must run before any bytes are streamed to staging: a principal without
+    write access should not be able to burn I/O and bandwidth up to max_upload_mb by uploading
+    files it will never be allowed to register.
+    """
     from fastapi.testclient import TestClient
 
     import gdap.core.container as container_module
@@ -136,6 +143,32 @@ def test_upload_requires_source_write_permission(platform: Any) -> None:
             )
             assert response.status_code == 403
             assert response.json()["error"]["code"] == "GDAP-3001"
+
+        staging = platform.settings.paths.staging
+        assert list(staging.rglob("*")) == []
     finally:
         platform.settings.security.auth_enabled = False
         container_module._PLATFORM = None
+
+
+def test_upload_repeated_filename_without_explicit_source_versions_same_dataset(
+    api_client: Any,
+) -> None:
+    """Re-importing the same file (no explicit `source`) must not 409 on the source name."""
+    first = api_client.post(
+        "/api/v1/sources/upload",
+        files={"file": ("data.csv", _CSV, "text/csv")},
+    )
+    assert first.status_code == 201, first.text
+    second = api_client.post(
+        "/api/v1/sources/upload",
+        files={"file": ("data.csv", _CSV, "text/csv")},
+    )
+    assert second.status_code == 201, second.text
+
+    first_body, second_body = first.json(), second.json()
+    assert first_body["source"]["name"] != second_body["source"]["name"]
+    assert first_body["result"]["dataset"] == second_body["result"]["dataset"] == "data"
+
+    dataset = api_client.get("/api/v1/datasets/data").json()
+    assert dataset["name"] == "data"
