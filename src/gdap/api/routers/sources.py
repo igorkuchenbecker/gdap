@@ -80,7 +80,7 @@ def create_source(body: CreateSourceRequest, context: ContextDep) -> dict[str, A
     status_code=status.HTTP_201_CREATED,
     summary="Upload a local file and ingest it in one step",
 )
-async def upload_source(
+def upload_source(
     context: ContextDep,
     file: Annotated[UploadFile, File(description="CSV, TSV, JSON/NDJSON, Parquet or Excel")],
     dataset: Annotated[str | None, Form()] = None,
@@ -91,6 +91,13 @@ async def upload_source(
     This is the no-JSON, no-manual-file-prep on-ramp for the web UI: pick a file, get a
     queryable dataset back. Everything else (tenant scoping, audit, the ingestion transaction)
     goes through the same :class:`SourceService` the JSON API uses.
+
+    Declared ``def``, not ``async def``, like every other handler in this API. The work below is
+    blocking from end to end -- a synchronous SQLAlchemy session, then a full ingestion that reads
+    the file in chunks and writes Parquet. On an ``async def`` handler all of that runs *on the
+    event loop*, so one person importing a large file stalls every other request in the process,
+    health checks included. As a plain ``def`` FastAPI runs it in the threadpool, where blocking
+    work belongs.
     """
     # Checked again inside SourceService.register/ingest (defense in depth), but checking here
     # first means a principal without these permissions never causes a byte of the upload to be
@@ -124,8 +131,11 @@ async def upload_source(
 
     written = 0
     try:
+        # ``file.file`` is the underlying spooled temporary file. Reading it directly keeps this
+        # handler synchronous; ``UploadFile.read`` is a coroutine and would force the whole
+        # endpoint back onto the event loop for no benefit.
         with target.open("wb") as buffer:
-            while chunk := await file.read(_UPLOAD_CHUNK_BYTES):
+            while chunk := file.file.read(_UPLOAD_CHUNK_BYTES):
                 written += len(chunk)
                 if written > limit_bytes:
                     raise PayloadTooLargeError(
@@ -139,7 +149,7 @@ async def upload_source(
         _discard_upload(target)
         raise
     finally:
-        await file.close()
+        file.file.close()
 
     try:
         row = context.sources.register(
