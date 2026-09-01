@@ -65,6 +65,10 @@ class Platform:
         return LocalFileStorage(self.settings.paths.models)  # type: ignore[arg-type]
 
     @cached_property
+    def staging(self) -> LocalFileStorage:
+        return LocalFileStorage(self.settings.paths.staging)  # type: ignore[arg-type]
+
+    @cached_property
     def warehouse(self) -> Warehouse:
         return Warehouse(self.storage)
 
