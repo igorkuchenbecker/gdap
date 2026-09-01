@@ -344,3 +344,35 @@ pre.json { max-height: 340px; overflow: auto; padding: 13px; border: 1px solid v
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after { scroll-behavior: auto !important; animation-duration: .01ms !important; animation-iteration-count: 1 !important; }
 }
+
+/* ── profile ────────────────────────────────────────────────────────────────────────────────
+ * What the profiler measured, made visible. Every bar here is paired with the figure it draws:
+ * the number is the claim and the bar is only the comparison, so nothing depends on colour or
+ * on width alone to be read.
+ */
+.rec-list { display: grid; gap: 8px; }
+.profile-grid { display: grid; gap: 12px; grid-template-columns: repeat(auto-fit, minmax(310px, 1fr)); }
+.profile-card { padding: 15px; box-shadow: none; }
+.profile-head { display: flex; align-items: center; flex-wrap: wrap; gap: 7px; margin-bottom: 12px; }
+.profile-head strong { font-size: 13px; letter-spacing: -.01em; }
+
+.meter { margin-bottom: 9px; }
+.meter-head { display: flex; justify-content: space-between; gap: 10px; margin-bottom: 4px;
+  color: var(--muted); font: 10px var(--mono); letter-spacing: .04em; text-transform: uppercase; }
+.meter-head strong { color: var(--ink); font-weight: 500; text-transform: none; letter-spacing: 0; }
+.meter-track { height: 4px; background: var(--bg); border: 1px solid var(--border); overflow: hidden; }
+.meter-fill { height: 100%; background: var(--accent); }
+/* Only ever emphasises what the label beside it already states in words. */
+.meter-fill.warn { background: var(--warn); }
+
+.dist { margin-top: 12px; display: grid; gap: 5px; }
+.dist-row { display: grid; grid-template-columns: minmax(0, 5.5rem) 1fr auto; align-items: center; gap: 9px; }
+.dist-label { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font: 11px var(--mono); color: var(--ink); }
+.dist-track { height: 9px; background: var(--bg); border: 1px solid var(--border); }
+.dist-fill { display: block; height: 100%; background: var(--accent-soft); border-right: 2px solid var(--accent); }
+.dist-value { color: var(--muted); font: 10px var(--mono); white-space: nowrap; }
+
+@media (max-width: 720px) {
+  .profile-grid { grid-template-columns: 1fr; }
+  .dist-row { grid-template-columns: minmax(0, 4.5rem) 1fr auto; }
+}

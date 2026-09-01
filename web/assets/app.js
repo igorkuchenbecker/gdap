@@ -80,6 +80,40 @@ function table(columns, rows, { onRow } = {}) {
 }
 
 function card(title, ...children) { return el("div", { class: "card" }, el("h3", {}, title), ...children); }
+
+/**
+ * A labelled proportion bar.
+ *
+ * The written value is the message and the bar is the comparison; the bar is never the only
+ * thing that carries the number, so this still reads on a monochrome screen or to a reader
+ * who cannot separate the hues. `tone` only ever emphasises what the label already says.
+ */
+function meter(label, ratio, text, tone = "") {
+  const pct = Math.max(0, Math.min(1, Number(ratio) || 0)) * 100;
+  return el("div", { class: "meter" },
+    el("div", { class: "meter-head" }, el("span", {}, label), el("strong", {}, text)),
+    el("div", { class: "meter-track" }, el("div", { class: `meter-fill ${tone}`, style: `width:${pct.toFixed(2)}%` })));
+}
+
+/**
+ * Frequency distribution for one column, from the profiler's `top_values`.
+ *
+ * Bars are scaled to the most frequent value present rather than to the row count, so a column
+ * whose values are all rare is still readable. The share each value represents is printed, because
+ * "longest bar" answers a different question from "how much of the data is this".
+ */
+function distribution(topValues, total) {
+  const rows = (topValues || []).slice(0, 8);
+  if (!rows.length) return el("div", { class: "empty" }, "no repeated values to summarise");
+  const largest = Math.max(...rows.map(([, count]) => count)) || 1;
+  return el("div", { class: "dist" }, rows.map(([value, count]) => {
+    const share = total ? (count / total) * 100 : 0;
+    return el("div", { class: "dist-row" },
+      el("span", { class: "dist-label", title: String(value) }, value === null || value === "" ? "(empty)" : String(value)),
+      el("span", { class: "dist-track" }, el("span", { class: "dist-fill", style: `width:${((count / largest) * 100).toFixed(2)}%` })),
+      el("span", { class: "dist-value" }, `${num(count)} · ${share.toFixed(1)}%`));
+  }));
+}
 function stat(title, value, sub) {
   return el("div", { class: "card stat-card" }, el("h3", {}, title),
     el("div", { class: "stat" }, value, sub ? el("small", {}, sub) : null));
@@ -474,9 +508,95 @@ const pages = {
 
 // ───────────────────────────────────── detail renderers ───────────────────────────────────
 
+/**
+ * What the profiler found, rendered.
+ *
+ * The platform already computes all of this — distributions, null and distinct ratios, candidate
+ * keys, correlations, recommendations — and until now the UI could *trigger* a profile with the
+ * button above and had nowhere to show the result. Everything here comes from the one
+ * `GET /datasets/{name}/profile` response; no endpoint was added for it.
+ */
+/**
+ * Unique column pairs from the profiler's correlation matrix, strongest first.
+ *
+ * The payload is a full matrix (`{a: {a: 1, b: .81}, b: {...}}`), so it carries every pair twice
+ * plus each column's correlation with itself. Both are dropped here: "revenue correlates with
+ * revenue at 1.0" is not a finding, and showing a pair twice would overstate how much the
+ * profiler found. Sorted by magnitude because a strong negative correlation is as interesting
+ * as a strong positive one.
+ */
+function correlationPairs(matrix) {
+  if (!matrix || typeof matrix !== "object") return [];
+  const seen = new Set();
+  const pairs = [];
+  for (const [left, row] of Object.entries(matrix)) {
+    for (const [right, value] of Object.entries(row || {})) {
+      if (left === right || !Number.isFinite(value)) continue;
+      const key = [left, right].sort().join(" ");
+      if (seen.has(key)) continue;
+      seen.add(key);
+      pairs.push({ left, right, value });
+    }
+  }
+  return pairs.sort((a, b) => Math.abs(b.value) - Math.abs(a.value));
+}
+
+function profileSection(name, profile) {
+  if (!profile) {
+    return el("div", { class: "empty" },
+      "no profile yet — press Profile above to have the platform read this dataset's shape");
+  }
+
+  const columns = profile.column_profiles || [];
+  const dupRatio = Number(profile.duplicate_ratio) || 0;
+  const keys = profile.candidate_keys || [];
+  const pairs = correlationPairs(profile.correlations);
+  const strongest = pairs[0];
+
+  return el("div", {},
+    el("div", { class: "grid" },
+      stat("Duplicate rows", num(profile.duplicate_rows), `${(dupRatio * 100).toFixed(2)}% OF ROWS`),
+      stat("Candidate keys", keys.length ? keys.join(", ") : "none", keys.length ? "UNIQUE ACROSS EVERY ROW" : "NO COLUMN IDENTIFIES A ROW"),
+      // The strongest pair, not a count of pairs: "6 correlations" tells you nothing you can act
+      // on, and every matrix of n numeric columns has the same n(n-1)/2 of them.
+      stat("Strongest link", strongest ? strongest.value.toFixed(2) : "—",
+        strongest ? `${strongest.left} ↔ ${strongest.right}`.toUpperCase() : "NO NUMERIC PAIRS"),
+      // Sampling changes what every number above is a claim about, so it is stated, not implied.
+      stat("Profiled", profile.sampled ? `${num(profile.sample_rows)} rows` : "every row", profile.sampled ? "SAMPLED — FIGURES ARE ESTIMATES" : "FULL SCAN")),
+
+    (profile.recommendations || []).length
+      ? el("div", {},
+          el("div", { class: "section-title" }, el("h2", {}, "What the profiler suggests"),
+            el("p", {}, "Suggestions, not changes — nothing here has been applied")),
+          el("div", { class: "rec-list" }, profile.recommendations.map((r) =>
+            el("div", { class: "callout" }, typeof r === "string" ? r : (r.message || JSON.stringify(r))))))
+      : null,
+
+    el("div", { class: "section-title" }, el("h2", {}, "Columns"),
+      el("p", {}, `${columns.length} profiled · bars are scaled within each column`)),
+    el("div", { class: "profile-grid" }, columns.map((column) => {
+      const nulls = Number(column.null_ratio) || 0;
+      const distinct = Number(column.distinct_ratio) || 0;
+      return el("div", { class: "card profile-card" },
+        el("div", { class: "profile-head" },
+          el("strong", {}, column.name),
+          el("code", {}, column.dtype),
+          badge(column.semantic_type),
+          column.classification ? badge(String(column.classification).toLowerCase()) : null),
+        meter("complete", 1 - nulls, nulls === 0 ? "no nulls" : `${((1 - nulls) * 100).toFixed(1)}% · ${num(column.null_count)} null`, nulls > 0.2 ? "warn" : ""),
+        meter("distinct", distinct, `${num(column.distinct_count)} value${column.distinct_count === 1 ? "" : "s"}`),
+        column.is_constant ? el("p", { class: "field-note" }, "constant — every row holds the same value") : null,
+        column.is_unique ? el("p", { class: "field-note" }, "unique — no value repeats") : null,
+        distribution(column.top_values, column.count));
+    })));
+}
+
 async function renderDataset(name) {
-  const [dataset, preview, schema] = await Promise.all([
+  const [dataset, preview, schema, profile] = await Promise.all([
     api(`/api/v1/datasets/${name}`), api(`/api/v1/datasets/${name}/preview?rows=20`), api(`/api/v1/datasets/${name}/schema`),
+    // A dataset that was never profiled answers 200 with null rather than 404, so a failure here
+    // is a real one and still surfaces; only "nothing computed yet" is treated as an empty state.
+    api(`/api/v1/datasets/${name}/profile`).catch(() => null),
   ]);
   const columns = preview.columns.slice(0, 12).map((c) => ({ label: c.name, key: c.name }));
   return el("div", {},
@@ -499,7 +619,10 @@ async function renderDataset(name) {
       { label: "nullable", render: (r) => (r.nullable ? "yes" : "no") },
     ], schema.columns),
     el("div", { class: "section-title" }, el("h2", {}, `Preview (${preview.masked ? "masked" : "raw"})`)),
-    table(columns, preview.records));
+    table(columns, preview.records),
+    el("div", { class: "section-title" }, el("h2", {}, "Profile"),
+      el("p", {}, "How this data is actually shaped, measured by the platform")),
+    profileSection(name, profile));
 }
 
 async function renderJob(jobId) {
