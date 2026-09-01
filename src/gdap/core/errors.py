@@ -81,6 +81,12 @@ class UnsupportedOperationError(GdapError):
     message = "Operation not supported"
 
 
+class PayloadTooLargeError(GdapError):
+    code = "GDAP-2004"
+    http_status = 413
+    message = "Payload exceeds the configured size limit"
+
+
 # --- security ----------------------------------------------------------------------------
 class AuthenticationError(GdapError):
     code = "GDAP-3000"
