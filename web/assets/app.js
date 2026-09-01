@@ -101,10 +101,21 @@ function meter(label, ratio, text, tone = "") {
  * Bars are scaled to the most frequent value present rather than to the row count, so a column
  * whose values are all rare is still readable. The share each value represents is printed, because
  * "longest bar" answers a different question from "how much of the data is this".
+ *
+ * An empty list is not the same claim as "nothing repeats". The profiler skips `top_values`
+ * entirely for free text and JSON blobs, where counting by exact value is meaningless, so the
+ * empty state has to say *that* — reporting "no repeated values" for a column where values
+ * plainly do repeat would be the panel inventing a finding.
  */
-function distribution(topValues, total) {
+const _UNCOUNTED = new Set(["free_text", "json_blob"]);
+
+function distribution(topValues, total, semanticType) {
   const rows = (topValues || []).slice(0, 8);
-  if (!rows.length) return el("div", { class: "empty" }, "no repeated values to summarise");
+  if (!rows.length) {
+    return el("div", { class: "empty" }, _UNCOUNTED.has(semanticType)
+      ? `not summarised — ${String(semanticType).replace("_", " ")} is not counted by exact value`
+      : "no values to summarise");
+  }
   const largest = Math.max(...rows.map(([, count]) => count)) || 1;
   return el("div", { class: "dist" }, rows.map(([value, count]) => {
     const share = total ? (count / total) * 100 : 0;
@@ -587,7 +598,7 @@ function profileSection(name, profile) {
         meter("distinct", distinct, `${num(column.distinct_count)} value${column.distinct_count === 1 ? "" : "s"}`),
         column.is_constant ? el("p", { class: "field-note" }, "constant — every row holds the same value") : null,
         column.is_unique ? el("p", { class: "field-note" }, "unique — no value repeats") : null,
-        distribution(column.top_values, column.count));
+        distribution(column.top_values, column.count, column.semantic_type));
     })));
 }
 
