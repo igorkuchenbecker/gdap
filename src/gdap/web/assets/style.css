@@ -261,8 +261,13 @@ main { display: flex; min-width: 0; flex-direction: column; }
 .field { display: grid; gap: 6px; }
 .field label, form.stack > label { color: var(--quiet); font: 9px var(--mono); letter-spacing: .1em; text-transform: uppercase; }
 .field-note { color: var(--quiet); font-size: 10px; }
+/* Determinate by default: the bar's width is the fraction of bytes actually sent, and the
+ * label beside it states the same number in words. The sweep animation is kept only for the
+ * case the browser reports no total, where a moving bar is honest and a percentage is not. */
 .upload-progress { height: 2px; overflow: hidden; background: var(--border); }
-.upload-progress span { display: block; width: 42%; height: 100%; background: var(--accent); animation: sweep 1.2s ease-in-out infinite; }
+.upload-progress span { display: block; width: 0; height: 100%; background: var(--accent); transition: width .18s linear; }
+.upload-progress-label { display: block; margin-top: 6px; color: var(--muted); font: 10px var(--mono); letter-spacing: .04em; }
+.upload-progress-wrap.indeterminate .upload-progress span { width: 42%; animation: sweep 1.2s ease-in-out infinite; transition: none; }
 @keyframes sweep { from { transform: translateX(-110%); } to { transform: translateX(240%); } }
 
 /* Tables and operational data */

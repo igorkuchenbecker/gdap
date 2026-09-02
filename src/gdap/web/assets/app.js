@@ -35,6 +35,46 @@ async function api(path, { method = "GET", body } = {}) {
   return payload;
 }
 
+/**
+ * Upload with progress, which `fetch` cannot report.
+ *
+ * `fetch` exposes no hook for bytes sent, so an import showed an indeterminate sweep and
+ * nothing else — for up to the 512 MB the server accepts, which is minutes of a bar that
+ * moves but means nothing. XMLHttpRequest still has `upload.onprogress`, so this one call
+ * uses it while every other request stays on `fetch`.
+ *
+ * The error shape is kept identical to `api()` so callers handle failures the same way.
+ */
+function upload(path, body, { onProgress } = {}) {
+  return new Promise((resolve, reject) => {
+    const request = new XMLHttpRequest();
+    request.open("POST", path);
+    if (state.apiKey) request.setRequestHeader("X-API-Key", state.apiKey);
+
+    request.upload.addEventListener("progress", (event) => {
+      // `lengthComputable` is false for a stream of unknown size; reporting null lets the
+      // caller show honest indeterminate motion rather than invent a percentage.
+      onProgress?.(event.lengthComputable ? event.loaded / event.total : null);
+    });
+
+    const fail = (message, payload = {}) =>
+      reject(Object.assign(new Error(message), payload));
+
+    request.addEventListener("load", () => {
+      let payload = null;
+      try { payload = request.responseText ? JSON.parse(request.responseText) : null; }
+      catch { payload = { raw: request.responseText }; }
+      if (request.status >= 200 && request.status < 300) return resolve(payload);
+      const error = payload?.error || { message: request.statusText, code: request.status };
+      fail(error.message, { code: error.code, details: error.details, trace: error.trace_id });
+    });
+    request.addEventListener("error", () => fail("the upload could not reach the server"));
+    request.addEventListener("abort", () => fail("the upload was cancelled"));
+
+    request.send(body);
+  });
+}
+
 // ────────────────────────────────────────── rendering ─────────────────────────────────────
 
 const el = (tag, attrs = {}, ...children) => {
@@ -170,7 +210,25 @@ function uploadStudio({ compact = false } = {}) {
     el("p", {}, "or click to browse · CSV, JSON, Parquet or Excel"));
   const dropzone = el("label", { class: "dropzone" }, fileInput, dropContent);
   const submit = el("button", { class: "btn primary", type: "submit", disabled: "true" }, "Import dataset");
-  const progress = el("div", { class: "upload-progress", hidden: "true" }, el("span"));
+  const progressBar = el("span");
+  const progressLabel = el("small", { class: "upload-progress-label" }, "");
+  const progress = el("div", { class: "upload-progress-wrap", hidden: "true" },
+    el("div", { class: "upload-progress" }, progressBar), progressLabel);
+
+  function showProgress(fraction) {
+    if (fraction === null) {
+      // Unknown total: fall back to the indeterminate sweep and say so, rather than
+      // showing a number the browser never gave us.
+      progress.classList.add("indeterminate");
+      progressLabel.textContent = "uploading…";
+      return;
+    }
+    progress.classList.remove("indeterminate");
+    progressBar.style.width = `${(fraction * 100).toFixed(1)}%`;
+    progressLabel.textContent = fraction >= 1
+      ? "uploaded — the server is reading it now"
+      : `${Math.round(fraction * 100)}% uploaded`;
+  }
 
   function setFile(file) {
     if (!file) return;
@@ -214,8 +272,9 @@ function uploadStudio({ compact = false } = {}) {
       submit.disabled = true;
       submit.textContent = "Importing…";
       progress.hidden = false;
+      showProgress(0);
       try {
-        const result = await api("/api/v1/sources/upload", { method: "POST", body: fields });
+        const result = await upload("/api/v1/sources/upload", fields, { onProgress: showProgress });
         const dataset = result.result?.dataset || fields.get("dataset") || selectedFile.name.replace(/\.[^.]+$/, "");
         toast(`${dataset} is ready to explore`);
         go("datasets", { dataset });
