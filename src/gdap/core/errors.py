@@ -143,6 +143,10 @@ class IngestionError(GdapError):
 
 class SchemaDriftError(IngestionError):
     code = "GDAP-4101"
+    # 409, not the 500 it inherits from IngestionError. The data the caller supplied conflicts
+    # with the dataset it is being loaded into; nothing on this side failed. A 500 pages someone
+    # and tells every client to retry a request that will never succeed unchanged.
+    http_status = 409
     message = "Incompatible schema change detected"
 
 

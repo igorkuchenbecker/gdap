@@ -206,15 +206,27 @@ class IngestionEngine:
         schema = classify_schema(enrich_schema_semantics(sample, write.schema))
         diff = previous_schema.diff(schema) if previous_schema else None
         if diff and not diff.is_empty:
-            if diff.is_breaking and not (
-                request.allow_breaking_schema_change
-                or self.settings.ingestion.allow_schema_evolution
-            ):
-                self.warehouse.delete_version(self.org_id, dataset.name, version_number)
-                raise SchemaDriftError(
-                    f"breaking schema change in '{dataset.name}'",
-                    details=diff.model_dump(),
+            # Two settings, two questions, and they must not be OR'd. `allow_schema_evolution`
+            # answers "may this dataset's shape change at all", and ships as True so an added
+            # column does not need a flag. `allow_breaking_schema_change` answers "may a column
+            # be dropped or retyped", and ships as False. Joining them with `or` let the
+            # permissive one satisfy the strict one, so with stock configuration a load that
+            # replaced every column landed as a new version with a warning -- while the module
+            # docstring promised breaking changes were refused.
+            if diff.is_breaking:
+                allowed = request.allow_breaking_schema_change
+                reason = (
+                    f"breaking schema change in '{dataset.name}': "
+                    f"{len(diff.removed)} column(s) dropped, {len(diff.type_changed)} retyped"
                 )
+            else:
+                allowed = self.settings.ingestion.allow_schema_evolution
+                reason = f"schema change in '{dataset.name}' but evolution is disabled"
+
+            if not allowed:
+                self.warehouse.delete_version(self.org_id, dataset.name, version_number)
+                raise SchemaDriftError(reason, details=diff.model_dump())
+
             warnings.append(f"schema evolved: {diff.model_dump()}")
             log.warning("schema_evolution", dataset=dataset.name, diff=diff.model_dump())
 
