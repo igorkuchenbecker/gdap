@@ -1,0 +1,165 @@
+name: CI
+
+on:
+  push:
+    branches: ["**"]
+  pull_request:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  # The suite reaches no external host: files come from fixtures, the database is SQLite in a
+  # temporary directory, and the AI layer defaults to its deterministic provider. Pinned here so
+  # a test that starts needing a network key fails loudly instead of quietly skipping.
+  GDAP_AI__PROVIDER: heuristic
+
+jobs:
+  test:
+    name: Test (Python ${{ matrix.python-version }})
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        # The full range pyproject declares, not just the one the author runs. A floor of 3.11
+        # that nobody exercises is a promise, not a fact.
+        python-version: ["3.11", "3.12", "3.13"]
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+
+      - name: Install the project
+        run: uv pip install --system -e ".[dev]"
+
+      - name: Run the suite
+        run: pytest --cov=gdap --cov-report=term-missing
+
+  lint:
+    name: Lint and types
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+
+      - name: Install the project
+        # mypy needs the real dependency tree to resolve types, so this is a full install and
+        # not just the linters.
+        run: uv pip install --system -e ".[dev]"
+
+      # `ruff check` and `mypy` only, which is what the README documents and what the codebase
+      # is actually kept to. `ruff format` disagrees with eight existing files; adopting the
+      # formatter is a decision with its own reformat commit, not something a CI change should
+      # impose by turning the build red.
+      - name: Lint
+        run: ruff check src tests
+
+      - name: Check types
+        run: mypy
+
+  package:
+    name: Wheel install
+    runs-on: ubuntu-latest
+    # The job that would have caught the UI never shipping. `web/` lived at the repository root
+    # while hatchling packages only `src/gdap`, so every wheel and every container answered `/`
+    # with a JSON fallback and `/assets/app.js` with a 404 -- and the whole suite stayed green,
+    # because it ran from a checkout where the files are on disk either way.
+    #
+    # So this installs the built wheel into an environment that has no source tree at all, and
+    # asserts against the running server rather than against the repository.
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+
+      - name: Build the wheel
+        run: uv build --wheel
+
+      - name: Install it into a clean environment
+        run: |
+          uv venv --python 3.13 /tmp/wheelenv
+          VIRTUAL_ENV=/tmp/wheelenv uv pip install "$(echo dist/*.whl)"
+
+      - name: The bundled UI has to be in the wheel
+        run: |
+          python - <<'PY'
+          import glob, sys, zipfile
+          names = zipfile.ZipFile(sorted(glob.glob("dist/*.whl"))[-1]).namelist()
+          missing = [
+              expected
+              for expected in ("gdap/web/index.html", "gdap/web/assets/app.js", "gdap/web/assets/style.css")
+              if expected not in names
+          ]
+          if missing:
+              sys.exit(f"the wheel is missing the UI: {missing}")
+          print("UI present in the wheel")
+          PY
+
+      - name: Serve from the install and ask for the UI over HTTP
+        # Run from /tmp: started inside the checkout, a path bug can still resolve against the
+        # source tree and the check passes for the wrong reason.
+        run: |
+          cd /tmp
+          GDAP_PATHS__HOME=/tmp/gdap-home GDAP_SECURITY__AUTH_ENABLED=false \
+            /tmp/wheelenv/bin/gdap system serve --host 127.0.0.1 --port 8765 &
+          for _ in $(seq 1 60); do
+            curl -sf -m 2 http://127.0.0.1:8765/api/v1/system/info >/dev/null && break
+            sleep 1
+          done
+          curl -sf -m 10 http://127.0.0.1:8765/ | grep -q "<!doctype html" \
+            || { echo "GET / did not return the UI"; exit 1; }
+          curl -sf -m 10 -o /dev/null http://127.0.0.1:8765/assets/app.js \
+            || { echo "GET /assets/app.js failed"; exit 1; }
+          curl -sf -m 10 -o /dev/null http://127.0.0.1:8765/assets/style.css \
+            || { echo "GET /assets/style.css failed"; exit 1; }
+          echo "the installed package serves its own UI"
+
+  docker:
+    name: Docker image
+    runs-on: ubuntu-latest
+    # The image had the same hole from the other side: it copied `web/` next to the app while
+    # the package lived in site-packages, so nothing read it. Building here keeps the Dockerfile
+    # honest, and the healthcheck endpoint is asked for directly.
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Build the image
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: deployment/Dockerfile
+          push: false
+          load: true
+          tags: gdap:ci
+
+      - name: Boot it and check readiness and the UI
+        run: |
+          docker run -d --name gdap-ci -p 8000:8000 \
+            -e GDAP_SECURITY__AUTH_ENABLED=false gdap:ci
+          for _ in $(seq 1 60); do
+            curl -sf -m 2 http://127.0.0.1:8000/readyz >/dev/null && break
+            sleep 2
+          done
+          curl -sf -m 10 http://127.0.0.1:8000/readyz || { docker logs gdap-ci; exit 1; }
+          curl -sf -m 10 http://127.0.0.1:8000/ | grep -q "<!doctype html" \
+            || { echo "the image does not serve the UI"; docker logs gdap-ci; exit 1; }
+          docker rm -f gdap-ci
