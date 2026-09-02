@@ -78,7 +78,7 @@ fazer num dá para fazer no outro (`gdap dataset validate vendas --json`,
 pytest                    # unit, integração, e2e
 ruff check src tests
 mypy
-gdap doctor               # diagnóstico do runtime
+gdap system doctor        # diagnóstico do runtime
 ```
 
 Arquitetura, pipelines, segurança e deploy em `docs/`; decisões técnicas em `docs/adr/`.

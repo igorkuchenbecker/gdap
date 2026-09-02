@@ -42,7 +42,15 @@ from gdap.observability.logging import get_logger
 
 log = get_logger(__name__)
 
-WEB_DIR = Path(__file__).resolve().parents[3] / "web"
+# Inside the package, deliberately. Hatchling ships `src/gdap` and nothing else, so a `web/`
+# directory at the repository root is simply absent from every wheel and from the Docker image
+# -- `pip install gdap && gdap system serve` answered with the JSON fallback and `/assets/app.js`
+# with a 404, which is the opposite of what ADR-007 promises. Resolving from the package means
+# one rule that holds in a source checkout and in an installed environment alike.
+#
+# A plain path rather than `importlib.resources`: StaticFiles needs a real directory, and this
+# package is never imported from a zip.
+WEB_DIR = Path(__file__).resolve().parents[1] / "web"
 
 DESCRIPTION = """
 **GDAP — Global Data Automation Platform**

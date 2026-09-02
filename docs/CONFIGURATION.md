@@ -53,7 +53,7 @@ GDAP_HOME=/var/lib/gdap            # where everything the platform writes lives
 | `docs_enabled` | `true` (`false` in production) | Serves `/docs` and `/openapi.json` |
 | `cors_origins` | `["http://localhost:5173"]` | Empty in production — set it explicitly |
 | `rate_limit_per_minute` | 240 | Per API key; a per-node guard, not an edge limiter |
-| `serve_web_ui` | `true` | Serves `web/` at `/` |
+| `serve_web_ui` | `true` | Serves the bundled SPA (`gdap/web/`) at `/` |
 
 ### `security`
 | Setting | Default | Notes |

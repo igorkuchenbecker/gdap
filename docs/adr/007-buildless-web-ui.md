@@ -9,7 +9,7 @@ a bundler, a lockfile, a build step in CI, and a second deployment artifact.
 
 ## Decision
 
-Ship the UI as static files (`web/index.html`, one ES module, one stylesheet) served by the API,
+Ship the UI as static files (`src/gdap/web/index.html`, one ES module, one stylesheet) served by the API,
 with **no build step**. It is a thin client of the public API: it holds no business logic and
 calls exactly the endpoints third parties call.
 

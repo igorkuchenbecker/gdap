@@ -32,7 +32,8 @@ COPY --from=builder /usr/local/bin/gdap /usr/local/bin/gdap
 
 WORKDIR /app
 COPY config ./config
-COPY web ./web
+# No `COPY web`: the UI ships inside the installed package now, so copying it here would
+# put a second, stale copy next to one nothing reads.
 COPY examples ./examples
 COPY migrations ./migrations
 COPY alembic.ini ./

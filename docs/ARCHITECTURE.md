@@ -131,7 +131,7 @@ gdap/
 │   ├── worker/          job runner, scheduler, leasing loop
 │   ├── plugins/         entry-point discovery for 3rd-party extensions
 │   └── demo/            realistic multi-table demo data generator
-├── web/                 API-first SPA (no build step; see ADR-007)
+
 ├── tests/{unit,integration,e2e}
 ├── config/              default.yaml + per-environment overlays
 ├── deployment/          Dockerfile, docker-compose, entrypoints
