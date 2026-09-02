@@ -44,23 +44,23 @@ def test_small_unlabelled_numeric_column_is_not_mistaken_for_an_identifier() -> 
     """A 3-row quantity column happens to be all-distinct — that alone must not mean identifier."""
     small = pl.Series("quantidade", [3, 2, 1])
     assert (
-        infer_semantic_type(small, distinct_ratio=1.0, is_unique=True) is not SemanticType.IDENTIFIER
+        infer_semantic_type(small, distinct_ratio=1.0, is_unique=True)
+        is not SemanticType.IDENTIFIER
     )
 
 
 def test_small_unlabelled_string_column_is_not_mistaken_for_an_identifier() -> None:
     small = pl.Series("apelido", ["Ana", "Bia", "Caio"])
     assert (
-        infer_semantic_type(small, distinct_ratio=1.0, is_unique=True) is not SemanticType.IDENTIFIER
+        infer_semantic_type(small, distinct_ratio=1.0, is_unique=True)
+        is not SemanticType.IDENTIFIER
     )
 
 
 def test_unlabelled_numeric_identifier_is_still_detected_with_enough_rows() -> None:
     """The uniqueness fallback still works once there is enough evidence to trust it."""
     large = pl.Series("reference", list(range(1000, 1030)))
-    assert (
-        infer_semantic_type(large, distinct_ratio=1.0, is_unique=True) is SemanticType.IDENTIFIER
-    )
+    assert infer_semantic_type(large, distinct_ratio=1.0, is_unique=True) is SemanticType.IDENTIFIER
 
 
 def test_profile_reports_nulls_duplicates_and_keys(sales_frame: pl.DataFrame) -> None:

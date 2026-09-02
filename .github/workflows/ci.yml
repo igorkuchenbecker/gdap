@@ -81,12 +81,11 @@ jobs:
         # not just the linters.
         run: uv pip install -e ".[dev]"
 
-      # `ruff check` and `mypy` only, which is what the README documents and what the codebase
-      # is actually kept to. `ruff format` disagrees with eight existing files; adopting the
-      # formatter is a decision with its own reformat commit, not something a CI change should
-      # impose by turning the build red.
       - name: Lint
         run: uv run ruff check src tests
+
+      - name: Check formatting
+        run: uv run ruff format --check src tests
 
       - name: Check types
         run: uv run mypy

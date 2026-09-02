@@ -77,12 +77,13 @@ fazer num dá para fazer no outro (`gdap dataset validate vendas --json`,
 ```sh
 pytest                    # unit, integração, e2e
 ruff check src tests
+ruff format --check src tests
 mypy
 gdap system doctor        # diagnóstico do runtime
 ```
 
 A CI roda a suíte em Python 3.11, 3.12 e 3.13 — a faixa inteira que o `requires-python`
-promete — mais `ruff check` e `mypy` a cada push e pull request.
+promete — mais `ruff check`, `ruff format --check` e `mypy` a cada push e pull request.
 
 Dois jobs existem por causa de um bug específico: a UI ficava fora do pacote, então todo wheel
 e toda imagem respondiam `/` com JSON e `/assets/app.js` com 404, enquanto a suíte seguia verde

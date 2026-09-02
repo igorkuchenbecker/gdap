@@ -105,7 +105,12 @@ def upload_source(
     # FastAPI has resolved `file`, and resolving an UploadFile means Starlette already parsed and
     # spooled the whole multipart body. What keeps an oversized body from being buffered at all
     # is BodySizeLimitMiddleware, which runs ahead of the parser.
-    require(context.principal, Permission.SOURCE_WRITE, Permission.DATASET_WRITE, resource="source upload")
+    require(
+        context.principal,
+        Permission.SOURCE_WRITE,
+        Permission.DATASET_WRITE,
+        resource="source upload",
+    )
 
     if not file.filename:
         raise ValidationFailedError("the uploaded file must have a name")

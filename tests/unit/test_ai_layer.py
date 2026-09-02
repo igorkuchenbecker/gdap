@@ -134,9 +134,9 @@ def test_auto_generated_pipeline_name_does_not_cut_a_word_in_half() -> None:
         "read lojinha vendas.csv into transactions, clean missing values, then validate",
         datasets=DATASETS,
     )
-    assert not plan.spec.name.endswith(
-        ("_clea", "_val", "_valida", "_missi", "_mis")
-    ), plan.spec.name
+    assert not plan.spec.name.endswith(("_clea", "_val", "_valida", "_missi", "_mis")), (
+        plan.spec.name
+    )
     assert plan.spec.name[-1] != "_"
 
 

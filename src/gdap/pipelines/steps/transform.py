@@ -289,7 +289,11 @@ def join(context: StepContext, step: StepSpec) -> StepOutcome:
         left_keys = [left_on] if isinstance(left_on, str) else list(left_on)
         right_keys = [right_on] if isinstance(right_on, str) else list(right_on)
         result = left.join(
-            right, left_on=left_keys, right_on=right_keys, how=how, coalesce=True  # type: ignore[arg-type]
+            right,
+            left_on=left_keys,
+            right_on=right_keys,
+            how=how,  # type: ignore[arg-type]
+            coalesce=True,
         )
     else:
         raise ValidationFailedError("join requires 'on' or both 'left_on' and 'right_on'")

@@ -35,7 +35,10 @@ def _spec(**overrides: object) -> ReportSpec:
             ReportSection(
                 title="Trend",
                 body="Revenue over time.",
-                table=[{"month": "2026-01", "revenue": 1000.5}, {"month": "2026-02", "revenue": None}],
+                table=[
+                    {"month": "2026-01", "revenue": 1000.5},
+                    {"month": "2026-02", "revenue": None},
+                ],
                 charts=[ChartSpec(kind="line", title="Revenue", x="month", y="revenue", data=[])],
                 insights=[
                     Insight(kind=InsightKind.INFERENCE, title="Growing", detail="Steady climb.")

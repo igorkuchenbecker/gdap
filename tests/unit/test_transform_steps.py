@@ -102,7 +102,9 @@ def test_enrich_datetime_derives_requested_calendar_parts() -> None:
     frame = pl.DataFrame({"order_date": [dt.date(2026, 3, 15)]})
     step_context = StepContext(services=None, params={}, frames={"data": frame}, current="data")  # type: ignore[arg-type]
     step = StepSpec.of(
-        "enrich.datetime", input="data", options={"column": "order_date", "parts": ["year", "month"]}
+        "enrich.datetime",
+        input="data",
+        options={"column": "order_date", "parts": ["year", "month"]},
     )
 
     outcome = enrich_datetime(step_context, step)
@@ -118,7 +120,9 @@ def test_enrich_datetime_rejects_an_unknown_part() -> None:
 
     frame = pl.DataFrame({"d": [dt.date(2026, 1, 1)]})
     step_context = StepContext(services=None, params={}, frames={"data": frame}, current="data")  # type: ignore[arg-type]
-    step = StepSpec.of("enrich.datetime", input="data", options={"column": "d", "parts": ["century"]})
+    step = StepSpec.of(
+        "enrich.datetime", input="data", options={"column": "d", "parts": ["century"]}
+    )
 
     with pytest.raises(ValidationFailedError, match="unknown datetime part"):
         enrich_datetime(step_context, step)

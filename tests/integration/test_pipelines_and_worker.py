@@ -339,9 +339,7 @@ def test_deleting_a_never_run_pipeline_does_not_crash(
         context.pipelines.get("sales_flow")
 
 
-def test_deleting_a_pipeline_keeps_its_job_history(
-    context: ServiceContext, demo_dir: Path
-) -> None:
+def test_deleting_a_pipeline_keeps_its_job_history(context: ServiceContext, demo_dir: Path) -> None:
     """The CLI/API promise 'its run history is kept' — jobs carry their own pipeline_name/spec,
     so detaching them from the deleted pipeline (pipeline_id -> NULL) must not lose anything."""
     _register(context, demo_dir)

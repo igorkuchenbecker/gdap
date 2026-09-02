@@ -130,9 +130,9 @@ def infer_semantic_type(
                 return semantic
         if _parses_as_date(sample):
             return SemanticType.DATE
-        if (
-            is_unique or (distinct_ratio or 0) > 0.95
-        ) and len(non_null) >= _MIN_ROWS_FOR_UNIQUENESS_IDENTIFIER:
+        if (is_unique or (distinct_ratio or 0) > 0.95) and len(
+            non_null
+        ) >= _MIN_ROWS_FOR_UNIQUENESS_IDENTIFIER:
             return SemanticType.IDENTIFIER
         average_length = sum(len(v) for v in sample) / max(len(sample), 1)
         if (distinct_ratio or 1) <= 0.5 and average_length <= 64:
