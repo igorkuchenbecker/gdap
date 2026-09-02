@@ -64,9 +64,7 @@ def test_dropping_every_column_is_refused_with_stock_settings(
     (tmp_path / "other.csv").write_text(_UNRELATED)
 
     with pytest.raises(SchemaDriftError) as raised:
-        loaded.sources.ingest(
-            IngestRequest(source="drop-box", object="other.csv", dataset="tx")
-        )
+        loaded.sources.ingest(IngestRequest(source="drop-box", object="other.csv", dataset="tx"))
 
     assert "column(s) dropped" in str(raised.value)
     # The rejected load leaves no half-written version behind.
@@ -84,9 +82,7 @@ def test_a_refused_drift_is_a_client_error_not_a_server_fault(
     (tmp_path / "other.csv").write_text(_UNRELATED)
 
     with pytest.raises(SchemaDriftError) as raised:
-        loaded.sources.ingest(
-            IngestRequest(source="drop-box", object="other.csv", dataset="tx")
-        )
+        loaded.sources.ingest(IngestRequest(source="drop-box", object="other.csv", dataset="tx"))
 
     assert raised.value.http_status == 409
 
@@ -109,16 +105,12 @@ def test_the_caller_can_still_opt_into_a_breaking_change(
     assert result.version == 2
 
 
-def test_evolution_can_be_switched_off_entirely(
-    loaded: ServiceContext, tmp_path: Path
-) -> None:
+def test_evolution_can_be_switched_off_entirely(loaded: ServiceContext, tmp_path: Path) -> None:
     """With evolution disabled, even an added column is refused."""
     loaded.platform.settings.ingestion.allow_schema_evolution = False
     (tmp_path / "second.csv").write_text(_ADDITIVE)
 
     with pytest.raises(SchemaDriftError) as raised:
-        loaded.sources.ingest(
-            IngestRequest(source="drop-box", object="second.csv", dataset="tx")
-        )
+        loaded.sources.ingest(IngestRequest(source="drop-box", object="second.csv", dataset="tx"))
 
     assert "evolution is disabled" in str(raised.value)
