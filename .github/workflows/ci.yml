@@ -38,11 +38,28 @@ jobs:
         with:
           enable-cache: true
 
+      # An explicit venv on the matrix interpreter. `uv pip install --system` targets the
+      # runner's own /usr, which is externally managed *and* is whatever Python the image
+      # happens to ship — so the matrix would have run one version three times while claiming
+      # three.
+      - name: Create the environment
+        run: uv venv --python ${{ matrix.python-version }}
+
       - name: Install the project
-        run: uv pip install --system -e ".[dev]"
+        run: uv pip install -e ".[dev]"
+
+      - name: Confirm the interpreter is the one this job claims
+        run: |
+          uv run python -c "import sys; print(sys.version)"
+          uv run python -c "
+          import sys
+          want = '${{ matrix.python-version }}'
+          got = '.'.join(map(str, sys.version_info[:2]))
+          sys.exit(0 if got == want else f'expected {want}, running {got}')
+          "
 
       - name: Run the suite
-        run: pytest --cov=gdap --cov-report=term-missing
+        run: uv run pytest --cov=gdap --cov-report=term-missing
 
   lint:
     name: Lint and types
@@ -56,20 +73,23 @@ jobs:
         with:
           enable-cache: true
 
+      - name: Create the environment
+        run: uv venv --python 3.13
+
       - name: Install the project
         # mypy needs the real dependency tree to resolve types, so this is a full install and
         # not just the linters.
-        run: uv pip install --system -e ".[dev]"
+        run: uv pip install -e ".[dev]"
 
       # `ruff check` and `mypy` only, which is what the README documents and what the codebase
       # is actually kept to. `ruff format` disagrees with eight existing files; adopting the
       # formatter is a decision with its own reformat commit, not something a CI change should
       # impose by turning the build red.
       - name: Lint
-        run: ruff check src tests
+        run: uv run ruff check src tests
 
       - name: Check types
-        run: mypy
+        run: uv run mypy
 
   package:
     name: Wheel install
