@@ -84,12 +84,23 @@ class SourceService:
         )
         decision.enforce()
         if decision.needs_human:
+            # The hint used to read "retry with approval recorded", describing a flow that does
+            # not exist: `source.delete` is in ALWAYS_APPROVAL and nothing records an approval
+            # for a source the way `job.approve` does for a job. So the endpoint could only ever
+            # answer 409, while telling the caller to try again in a way that was never possible.
+            # It now says what is actually true, and points at the report that shows what a
+            # source is still holding on disk.
             raise ApprovalRequiredError(
                 f"deleting source '{row.name}' requires explicit human approval",
                 details={
                     "reason": decision.reason,
                     "approval": decision.approval.value,
-                    "hint": "confirm with an administrator, then retry with approval recorded",
+                    "hint": (
+                        "source deletion has no self-service approval path: remove it with "
+                        "administrative access to the database, or leave it registered. "
+                        "GET /api/v1/retention/uploads reports what an uploaded source is "
+                        "still holding in staging."
+                    ),
                 },
             )
         self.repo.delete(row.id)

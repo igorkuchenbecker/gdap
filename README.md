@@ -38,7 +38,9 @@ tudo num ciclo que o negócio consegue acompanhar e auditar.
 - **Automação** com retry/backoff, agendamento cron, dependência entre pipelines e alertas
 - **Governança** — RBAC multi-tenant, API keys, trilha de auditoria, lineage,
   classificação automática de sensibilidade, mascaramento e guard de SQL (bloqueia
-  DDL/escrita por padrão)
+  DDL/escrita por padrão). Retenção é **relatada, nunca aplicada sozinha**: versões de dataset
+  e arquivos de upload vencidos aparecem em `/api/v1/retention/candidates` e
+  `/api/v1/retention/uploads`, e apagar continua sendo decisão humana
 
 ## Analista de IA
 

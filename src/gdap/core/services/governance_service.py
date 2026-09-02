@@ -97,6 +97,66 @@ class GovernanceService:
                     )
         return candidates
 
+    def staged_uploads(self) -> builtins.list[dict[str, Any]]:
+        """Files left in staging by the upload endpoint. Reported, never auto-deleted (§38).
+
+        Every ``POST /sources/upload`` writes its file into staging and leaves it there: the
+        source that owns it points at that exact path, and this platform deletes nothing on a
+        timer. Nothing surfaced them either, so the only way to learn how much upload traffic a
+        deployment had accumulated was to look at the disk — which is the sort of thing an
+        operator discovers when it is already a problem.
+
+        This is a report, matching :meth:`retention_candidates`. Acting on it stays a human
+        decision, because ``retention.purge`` is an always-approval operation and removing an
+        upload removes the only copy of what was originally loaded.
+
+        ``orphaned`` marks a file no registered source refers to. There is no path that produces
+        one today — a failed upload cleans up after itself — so a non-empty count is itself the
+        finding: something removed a source row without removing its file, or a write was
+        interrupted between staging and registration.
+        """
+        require(self.context.principal, Permission.GOVERNANCE_READ, resource="retention")
+
+        staging = getattr(self.context.platform, "staging", None)
+        local_path = getattr(staging, "local_path", None)
+        if local_path is None:  # object storage: nothing local to walk
+            return []
+        root = local_path(f"{self.context.org_id}/uploads")
+        if not root.is_dir():
+            return []
+
+        sources = SourceRepository(self.context.session, self.context.org_id)
+        owners = {
+            (row.config or {}).get("path"): row.name
+            for row in sources.list(limit=1000)
+            if isinstance((row.config or {}).get("path"), str)
+        }
+
+        now = datetime.now(UTC)
+        reported: builtins.list[dict[str, Any]] = []
+        for path in sorted(root.rglob("*")):
+            if not path.is_file():
+                continue
+            try:
+                stat = path.stat()
+            except OSError:  # vanished between the walk and the stat
+                continue
+            modified = datetime.fromtimestamp(stat.st_mtime, tz=UTC)
+            owner = owners.get(str(path))
+            reported.append(
+                {
+                    # Relative to staging: the absolute path is a filesystem detail, and the
+                    # key is what identifies the object under any backend.
+                    "key": str(path.relative_to(root)),
+                    "source": owner,
+                    "orphaned": owner is None,
+                    "size_bytes": stat.st_size,
+                    "modified_at": modified.isoformat(),
+                    "age_days": round((now - modified).total_seconds() / 86400.0, 2),
+                }
+            )
+        return reported
+
     def classification_summary(self) -> dict[str, Any]:
         datasets = DatasetRepository(self.context.session, self.context.org_id)
         summary: dict[str, list[str]] = {level.value: [] for level in DataClassification}

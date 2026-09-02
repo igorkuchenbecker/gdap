@@ -56,6 +56,17 @@ def retention(context: ContextDep) -> dict[str, Any]:
     return {"items": items, "count": len(items)}
 
 
+@router.get("/retention/uploads", summary="Files the upload endpoint left in staging")
+def staged_uploads(context: ContextDep) -> dict[str, Any]:
+    items = context.governance.staged_uploads()
+    return {
+        "items": items,
+        "count": len(items),
+        "total_bytes": sum(int(item["size_bytes"]) for item in items),
+        "orphaned": sum(1 for item in items if item["orphaned"]),
+    }
+
+
 @router.get("/classification", summary="Datasets grouped by classification level")
 def classification(context: ContextDep) -> dict[str, Any]:
     return context.governance.classification_summary()
